@@ -113,55 +113,9 @@ python run_pipeline.py generate
 
 ## 🎯 OpenClaw 一键配置
 
-本项目专为 OpenClaw 用户设计，Skill + Cron 可一键接入：
+本项目专为 OpenClaw 用户设计。将 `openclaw-setup.md` 发送给 OpenClaw，即可一站式完成配置。
 
-### 1. 配置 API Key
-
-```bash
-# 编辑 crawler_config.ini
-# api_key = sk-your-key-here
-```
-
-### 2. 安装 Skill（可选）
-
-项目已提供完整的 `briefnexus-pipeline` Skill 提案，记录在 OpenClaw 的 `skill_workshop` 中：
-
-```
-skill: briefnexus-pipeline
-→ 包含完整工作流说明（Phase 1-3）
-→ 数据源配置、输出路径、环境要求
-```
-
-### 3. 设置定时采集（Cron）
-
-在 OpenClaw 中设置 cron job，工作日 09:00 自动执行：
-
-```yaml
-# 示例 cron 配置
-name: briefnexus-daily-crawl
-schedule: "0 9 * * 1-5"        # 工作日 09:00
-timezone: Asia/Shanghai
-command: python news_crawler.py --max-age 7
-output: 自动通知用户结果
-```
-
-或在 OpenClaw 中通过 cron 命令创建：
-
-```
-openclaw cron add \
-  --name briefnexus-daily-crawl \
-  --schedule "0 9 * * 1-5" \
-  --tz Asia/Shanghai \
-  --command "python scripts/news_crawler.py --max-age 7" \
-  --announce
-```
-
-### 4. 自动化交付物
-
-- **工作日 09:00** → 自动采集（Phase 1）
-- **通知用户** → 打开 news.md 勾选
-- 用户勾选后 → 人工跑 Phase 2.5（联网核实，仅需一步复制粘贴）
-- Phase 3 → 自动生成报告 + 话题帖
+包含：API Key 写入 → 依赖安装 → Skill 注册 → 定时任务 → 验证。
 
 ## 定制你的数据源
 
