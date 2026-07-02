@@ -85,6 +85,7 @@ def _delay():
 
 def _date_from_url(url: str) -> Optional[datetime]:
     for pat in [
+        r"/(\d{4})(\d{2})/(\d{2})/",  # /202606/30/ (CSA联盟)
         r"/(\d{4})(\d{2})(\d{2})/",
         r"/(\d{4})-(\d{2})-(\d{2})/",
         r"(\d{4})(\d{2})(\d{2})[_-]",

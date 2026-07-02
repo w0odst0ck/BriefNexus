@@ -59,8 +59,9 @@ Phase 3: 生成
 | 文件 | 内容 | 长度 |
 |------|------|------|
 | `news/news_2026-07-01.md` | 47 条（15学术 + 32政府） | ~40KB |
-| `report/report_2026-07-01.md` | 问题驱动型分析报告 | ~2.5KB |
-| `topic/topic_2026-07-01.md` | 4-5 条社群话题帖 | ~2KB |
+| `news/news_2026-07-02.md` | 40 条（3 个数据源） | ~27KB |
+| `report/report_2026-07-02.md` | 问题驱动型分析报告 | ~6.9KB |
+| `topic/topic_2026-07-02.md` | 4-5 条社群话题帖 | ~3.8KB |
 
 ---
 
@@ -111,11 +112,30 @@ python run_pipeline.py generate
 
 ---
 
-## 🎯 OpenClaw 一键配置
+## ⏱ 每日自动采集
 
-本项目专为 OpenClaw 用户设计。将 `openclaw-setup.md` 发送给 OpenClaw，即可一站式完成配置。
+本项目支持两种定时任务方式（二选一或双重保险）：
 
-包含：API Key 写入 → 依赖安装 → Skill 注册 → 定时任务 → 验证。
+### 方式一：Windows 任务计划程序（主力）
+
+```powershell
+# 创建任务（周一到周五 9:00）
+schtasks /CREATE /SC WEEKLY /D MON,TUE,WED,THU,FRI `
+  /TN "BriefNexus-DailyCrawl" `
+  /TR "<python路径> D:\NOTES\zzz\BriefNexus\scripts\news_crawler.py --max-age 7" `
+  /ST 09:00 /RL LIMITED /F
+```
+
+- 不依赖 LLM，稳定可靠
+- 需要用户登录后运行
+
+### 方式二：OpenClaw cron（兜底）
+
+```
+在 OpenClaw 中创建定时任务，用 systemEvent 唤醒主会话执行脚本。
+```
+
+> ⚠️ 注意：OpenClaw 隔离会话的 LLM 调用可能超时，建议使用 `sessionTarget: "main"` + `payload.kind: "systemEvent"` 避免此问题。
 
 ## 定制你的数据源
 
@@ -150,7 +170,7 @@ pip install requests beautifulsoup4 feedparser lxml
 ## 输出示例
 
 ```
-news/news_2026-07-01.md       → 47 条（15 学术论文 + 32 政府公告）
-report/report_2026-07-01.md    → 问题驱动型分析报告（~2.5KB）
-topic/topic_2026-07-01.md      → 4-5 条社群话题帖（~2KB）
+news/news_2026-07-02.md       → 40 条（3 个数据源）
+report/report_2026-07-02.md    → 问题驱动型分析报告（~6.9KB）
+topic/topic_2026-07-02.md      → 4-5 条社群话题帖（~3.8KB）
 ```
