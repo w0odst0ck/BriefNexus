@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.env
+.venv
+
+# Database
+standards/standards.db
+
+# Downloads (PDFs + text extracts)
+standards/downloads/*.pdf
+standards/downloads/*.txt
+standards/downloads/*.zip
+standards/downloads/*.rar
+standards/downloads/_hcno_results.json
+
+# Output (regenerated)
+standards/output/_latest.json
+standards/output/standards_*.json
+standards/output/standards_*.md
+
+# Editor
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Privacy - project logs, database files, sensitive config
+memory/
+*.db
+standards/standards_config.ini
+*.config.ini
+*.ini

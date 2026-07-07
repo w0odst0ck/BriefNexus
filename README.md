@@ -22,7 +22,17 @@ D:\NOTES\zzz\BriefNexus\
 │   └── prompt\                 ← Phase 2: 导出到 LLM 网页端的提示词
 │
 ├── report\                     ← Phase 3: 问题驱动型分析报告
-└── topic\                      ← Phase 3: 社群话题帖
+├── topic\                      ← Phase 3: 社群话题帖
+│
+├── intel\                       ← 情报采集与分析模块（2026-07-07 封装）
+│   ├── collector\/platforms\   ← 数据源适配器（arXiv / CSA / 上海住建委）
+│   ├── pipeline\              ← 导出 prompt + 报告生成
+│   └── output\                ← 采集结果
+│
+└── standards\                  ← 行业标准采集模块（2026-07-07 新增）
+    ├── crawler\/platforms\     ← 标准平台适配器（SAMR / SPC / CSRES）
+    ├── engine\                 ← 采集引擎 + 去重 + 导出 + SQLite存储
+    └── output\                 ← 采集结果（JSON / MD / CSV）
 ```
 
 ## 工作流（通用，不限领域）
@@ -108,6 +118,128 @@ python run_pipeline.py export
 
 # 5. 生成（Phase 3）
 python run_pipeline.py generate
+```
+
+---
+
+## 🏛️ 行业标准采集模块
+
+> 通用行业标准采集工具。自动从国家标准化平台抓取标准数据，构建可检索、可通过 ICS 分类树浏览的本地知识库。
+> 数据源、关键词、ICS 代码均可配置，适用于任意行业领域。
+
+### 数据源
+
+| 来源 | 类型 | 覆盖内容 | 状态 |
+|------|------|----------|------|
+| **全国标准信息公共服务平台 (SAMR)** | 国标 | GB/GB/T/GB/Z 标准检索与详情 | ✅ 稳定 |
+| **中国标准在线服务网 (SPC)** | 国标/行标 | 标准全文检索 | ❌ 待修复 |
+| **工标网 (CSRES)** | 综合 | 按 ICS 分类遍历 | ⏸ 默认关闭 |
+
+### 工作流
+
+```
+配置领域 → 采集 → 入库 → ICS 补充 → 检索/查询/统计
+```
+
+### 存储架构
+
+```
+standards.db    ← SQLite 数据库（自动创建）
+├── standards          ← 主表（UPSERT 去重）
+├── standards_fts      ← FTS5 全文索引
+├── ics_tree           ← ICS 分类树
+└── standard_ics       ← 标准 ↔ ICS 关联（多对多）
+```
+
+### CLI 命令
+
+```bash
+# 采集标准数据
+python -m standards.crawler.main collect
+
+# 从详情页补充 ICS 代码（只需跑一次）
+python -m standards.crawler.main enrich
+
+# 全文检索
+python -m standards.crawler.main search "关键词"
+python -m standards.crawler.main search "GB/T 12345-2023"
+
+# 精确过滤
+python -m standards.crawler.main list --status 现行 --category 国标
+python -m standards.crawler.main list --date-from 2024-01-01
+
+# ICS 分类树浏览
+python -m standards.crawler.main tree                      # 根节点
+python -m standards.crawler.main tree 29                   # 电气工程
+python -m standards.crawler.main tree 29.140 --standards   # 节点下标准
+
+# 数据库统计
+python -m standards.crawler.main stats
+
+# JSON 输出（程序消费）
+python -m standards.crawler.main search "关键词" --json > data.json
+```
+
+### 快速开始
+
+```bash
+# 1. 安装依赖
+pip install requests beautifulsoup4 lxml
+
+# 2. 配置领域（必选）
+#    编辑 standards/standards_config.ini，修改为你关注的领域
+#    name = 你关注的行业名称
+#    keywords = 关键词1,关键词2
+#    ics_codes = 29.140,91.140
+
+# 3. 采集 + 入库
+python -m standards.crawler.main collect
+
+# 4. 补充 ICS 代码
+python -m standards.crawler.main enrich
+
+# 5. 检索
+python -m standards.crawler.main search "关键词"
+```
+
+### 定制领域
+
+编辑 `standards/standards_config.ini`：
+
+```ini
+[domain]
+name = 你的行业名称
+keywords = 关键词1,关键词2,关键词3
+ics_codes = 29.140,13.020,91.140
+
+[crawler]
+enable_samr = true
+enable_spc = false
+enable_csres = false
+max_pages = 20
+```
+
+> **示例配置：** 仓库预置了「照明与智能灯具」领域的配置作为参考样例。`standards/standards_config.ini` 中的参数可直接修改用于你的领域。
+
+# 3. 采集 + 入库
+python -m standards.crawler.main collect
+
+# 4. 补充 ICS 代码
+python -m standards.crawler.main enrich
+
+# 5. 检索
+python -m standards.crawler.main search "LED"
+```
+
+### 定制领域
+
+编辑 `standards/standards_config.ini`，修改以下配置即可切换到其他行业：
+
+```ini
+[domain]
+name = 你的领域名称
+keywords = 关键词1,关键词2,关键词3
+ics_codes = 29.140,13.020,91.140
 ```
 
 ---
