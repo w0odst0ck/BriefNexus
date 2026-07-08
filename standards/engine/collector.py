@@ -256,6 +256,10 @@ def run_cli():
                          help="Playwright 无头模式")
     p_fetch.add_argument("--save-auth", action="store_true",
                          help="Playwright: 保存夸克登录态")
+    p_fetch.add_argument("--save-quark", action="store_true",
+                         help="Playwright: 自动保存夸克分享文件到网盘")
+    p_fetch.add_argument("--quark-url",
+                         help="单条夸克分享链接 (配合 --save-quark)")
     p_fetch.add_argument("--bzxz-map",
                          help="Playwright: bzxz_id 映射 JSON")
 
@@ -825,10 +829,24 @@ def _run_fetch(args):
     now_str = datetime.now(CST).strftime(TIME_FMT)
 
     # ── Playwright 浏览器自动化模式 ────────────────────
-    if args.playwright or args.save_auth:
+    if args.playwright or args.save_auth or args.save_quark:
         if args.save_auth:
             import subprocess, sys
             subprocess.run([sys.executable, "-m", "standards.downloader.auth", "--save"])
+            return
+        if args.save_quark:
+            import asyncio, json
+            from standards.downloader.quark_save import batch_save
+            if args.quark_url:
+                items = [{"std_no": "", "quark_url": args.quark_url}]
+            else:
+                manifest_path = "standards/downloads/_download_manifest.json"
+                with open(manifest_path) as f:
+                    data = json.load(f)
+                items = [{"std_no": k, "quark_url": v["quark_url"]}
+                         for k, v in data.items() if v.get("quark_url")]
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(batch_save(items))
             return
         _run_fetch_playwright(args)
         return
