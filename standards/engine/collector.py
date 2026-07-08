@@ -250,6 +250,14 @@ def run_cli():
                          help="bzxz.net 列表页扫描页数 (默认 30)")
     p_fetch.add_argument("--domestic-only", action="store_true",
                          help="仅处理非采标 (85 条)")
+    p_fetch.add_argument("--playwright", action="store_true",
+                         help="使用 Playwright 浏览器自动化下载夸克 PDF")
+    p_fetch.add_argument("--headless", action="store_true",
+                         help="Playwright 无头模式")
+    p_fetch.add_argument("--save-auth", action="store_true",
+                         help="Playwright: 保存夸克登录态")
+    p_fetch.add_argument("--bzxz-map",
+                         help="Playwright: bzxz_id 映射 JSON")
 
     # read: 打开本地 PDF
 
@@ -672,6 +680,37 @@ def _run_note(args):
     db.close()
 
 
+def _run_fetch_playwright(args):
+    """使用 Playwright 浏览器自动化下载夸克网盘 PDF"""
+    import asyncio
+    from standards.downloader.download import (
+        batch_download, find_bzxz_ids_from_db
+    )
+
+    bzxz_map = {}
+    if args.bzxz_map:
+        import json
+        with open(args.bzxz_map) as f:
+            bzxz_map = json.load(f)
+        print(f"加载 bzxz 映射: {len(bzxz_map)} 条")
+
+    if not bzxz_map and args.domestic_only:
+        print("正在扫描 bzxz.net 列表页找标准 ID...")
+        found = find_bzxz_ids_from_db(domestic_only=True, limit=args.limit)
+        bzxz_map.update(found)
+        print(f"找到 {len(found)} 条")
+
+    if not bzxz_map:
+        print("错误: 没有找到可下载的标准")
+        print("提示: 可通过 --bzxz-map 指定 ID 映射文件")
+        print("或先用 --alt --scan-pages 50 --domestic-only 扫描")
+        return
+
+    print(f"即将下载 {len(bzxz_map)} 条标准...")
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(batch_download(bzxz_map))
+
+
 def _run_fetch_alt(args):
     """从 bzxz.net 等替代来源抓取标准正文文本"""
     from datetime import datetime, timezone, timedelta
@@ -784,6 +823,15 @@ def _run_fetch(args):
     from datetime import datetime, timezone, timedelta
     CST = timezone(timedelta(hours=8))
     now_str = datetime.now(CST).strftime(TIME_FMT)
+
+    # ── Playwright 浏览器自动化模式 ────────────────────
+    if args.playwright or args.save_auth:
+        if args.save_auth:
+            import subprocess, sys
+            subprocess.run([sys.executable, "-m", "standards.downloader.auth", "--save"])
+            return
+        _run_fetch_playwright(args)
+        return
 
     # ── 替代来源模式 (bzxz.net) ────────────────────────
     if args.alt:
