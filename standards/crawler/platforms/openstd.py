@@ -350,22 +350,24 @@ def download_pdf(hcno: str, standard_no: str, session: Session = None,
         return local_path
 
     try:
-        # Step 1: 详情页 (建立 session)
-        detail_url = f"{DETAIL_URL}?hcno={hcno}"
-        session.get(detail_url, timeout=15, allow_redirects=True)
+        # Step 1 + 2: 详情页 + showGb（都走 /gb/ 旧路径，自动 301→/std/）
+        # /gb/ 路径会设置正确的 session 状态，/std/ 路径不会
+        base_url = f"https://openstd.samr.gov.cn/bzgk/gb"
+        
+        # Step 1: 详情页
+        r1 = session.get(f"{base_url}/newGbInfo?hcno={hcno}", timeout=15, allow_redirects=True)
+        
+        # Step 2: showGb — 设置 Referer 很重要
+        r2 = session.get(f"{base_url}/showGb?type=download&hcno={hcno}&request_locale=zh",
+                         timeout=15, allow_redirects=True,
+                         headers={"Referer": f"{base_url}/newGbInfo?hcno={hcno}"})
 
-        # Step 2: showGb?type=download（触发服务端校验，必须 follow redirect）
-        trigger_url = f"{DOWNLOAD_TRIGGER}?type=download&hcno={hcno}&request_locale=zh"
-        r2 = session.get(trigger_url, timeout=15, allow_redirects=True,
-                          headers={"Referer": detail_url})
-
-        # Step 2 返回 404 说明该标准无公开全文
         if r2.status_code in (404, 403) or r2.url.endswith("404.jsp"):
             logger.warning("无公开全文: %s (showGb返回 %d)", standard_no, r2.status_code)
             return None
 
-        # Step 3: viewGb（获取 PDF）
-        pdf_url = f"{PDF_URL}?hcno={hcno}"
+        # Step 3: viewGb（走 /gb/ 旧路径，自动 301→/std/viewGb 取回 PDF）
+        pdf_url = f"{base_url}/viewGb?hcno={hcno}"
         r3 = session.get(pdf_url, timeout=30, allow_redirects=True)
 
         if r3.status_code == 200 and r3.content and r3.content[:4] == b"%PDF":
