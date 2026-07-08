@@ -244,6 +244,12 @@ def run_cli():
     p_fetch.add_argument("--workers", type=int, default=3,
                          help="并发数")
     p_fetch.add_argument("--db", help="数据库路径")
+    p_fetch.add_argument("--alt", action="store_true",
+                         help="从 bzxz.net 抓取标准正文文本")
+    p_fetch.add_argument("--scan-pages", type=int, default=30,
+                         help="bzxz.net 列表页扫描页数 (默认 30)")
+    p_fetch.add_argument("--domestic-only", action="store_true",
+                         help="仅处理非采标 (85 条)")
 
     # read: 打开本地 PDF
 
@@ -666,12 +672,123 @@ def _run_note(args):
     db.close()
 
 
+def _run_fetch_alt(args):
+    """从 bzxz.net 等替代来源抓取标准正文文本"""
+    from datetime import datetime, timezone, timedelta
+    CST = timezone(timedelta(hours=8))
+    TIME_FMT = "%Y-%m-%d %H:%M:%S"
+    now_str = datetime.now(CST).strftime(TIME_FMT)
+
+    from standards.engine.storage import StandardDB as db_class
+
+    db = db_class(args.db)
+
+    # ── 确定要处理的标准列表 ──
+    if args.query:
+        # 单个标准
+        row = db.get_by_standard_no(args.query)
+        if not row:
+            results = db.search(args.query, limit=1)
+            row = results[0] if results else None
+        if not row:
+            print(f"未找到: {args.query}")
+            db.close()
+            return
+        standards_list = [row]
+    else:
+        # 全部或部分
+        if args.domestic_only:
+            print("仅处理非采标 (85 条)...")
+            # 从数据库查询非采标
+            conn = db._conn
+            cur = conn.execute(
+                "SELECT id, standard_no, title, raw_data FROM standards "
+                "WHERE is_adopted = 0 OR is_adopted IS NULL "
+                "ORDER BY standard_no"
+            )
+        else:
+            cur = conn = db._conn
+            cur = conn.execute(
+                "SELECT id, standard_no, title, raw_data FROM standards "
+                "ORDER BY standard_no"
+            ) if hasattr(db, '_conn') else []
+
+        standards_list = []
+        for row in cur.fetchall() if hasattr(cur, 'fetchall') else cur:
+            d = dict(row)
+            if d.get("raw_data"):
+                try:
+                    d["raw_data"] = json.loads(d["raw_data"])
+                except:
+                    d["raw_data"] = {}
+            else:
+                d["raw_data"] = {}
+            standards_list.append(d)
+
+        if args.limit > 0:
+            standards_list = standards_list[:args.limit]
+
+    db.close()
+
+    total = len(standards_list)
+    print(f"{'=' * 60}")
+    print(f"  替代来源抓取 (bzxz.net)")
+    print(f"  待处理: {total} 条标准")
+    print(f"  列表页扫描: {args.scan_pages} 页")
+    print(f"{'=' * 60}")
+
+    # ── 第一步：批量扫描 bzxz.net 列表页 ──
+    print("\n[步骤 1] 扫描 bzxz.net 列表页...")
+    from standards.crawler.platforms.search_finder import search_on_bzxz_list
+
+    target_nos = [s["standard_no"] for s in standards_list]
+    scan_result = search_on_bzxz_list(target_nos, max_pages=args.scan_pages)
+
+    found_map = scan_result["found"]
+    print(f"  扫描 {scan_result['pages_scanned']} 页")
+    print(f"  找到 {len(found_map)}/{total} 条")
+    if scan_result['not_found']:
+        print(f"  未找到 {len(scan_result['not_found'])} 条")
+
+    if not found_map:
+        print("❌ 未在 bzxz.net 上找到任何匹配标准，退出")
+        return
+
+    # ── 第二步：依次抓取正文 ──
+    print("\n[步骤 2] 抓取标准正文...")
+    from standards.crawler.platforms.alt_sources import fetch_from_sharing_sites
+
+    # 构建 bzxz_id_map
+    bzxz_id_map = {}
+    for std_no, entry in found_map.items():
+        bzxz_id_map[std_no] = entry["bzxz_id"]
+
+    result = fetch_from_sharing_sites(
+        standards_list=standards_list,
+        limit=0,
+        bzxz_id_map=bzxz_id_map,
+    )
+
+    # ── 汇总 ──
+    print(f"\n{'=' * 60}")
+    print(f"  完成 @{now_str}")
+    print(f"  成功: {result['success']} / 失败: {result['failed']} / 跳过: {result.get('skipped', 0)}")
+    print(f"  未找到: {result['not_found']}")
+    print(f"  耗时: {result.get('duration_s', 0):.1f}s")
+    print(f"{'=' * 60}")
+
+
 def _run_fetch(args):
     """下载标准全文"""
     TIME_FMT = "%Y-%m-%d %H:%M:%S"
     from datetime import datetime, timezone, timedelta
     CST = timezone(timedelta(hours=8))
     now_str = datetime.now(CST).strftime(TIME_FMT)
+
+    # ── 替代来源模式 (bzxz.net) ────────────────────────
+    if args.alt:
+        _run_fetch_alt(args)
+        return
 
     from standards.crawler.downloader import (
         download_standard, batch_download, _get_local_path, DOWNLOAD_DIR

@@ -170,13 +170,15 @@ def _update_db_alt_source(std_id: int, alt_info: dict):
 # ── 单条标准处理 ────────────────────────────────────────
 
 def process_single_standard(std_item: dict,
-                            search_results: dict = None) -> dict:
+                            search_results: dict = None,
+                            bzxz_id_map: dict = None) -> dict:
     """处理单条标准: 查找 → 抓取 → 提取 → 保存 → 更新数据库
 
     Args:
         std_item: {"id": int, "standard_no": str, "title": str, "raw_data": dict}
         search_results: 可选的预搜索结构化结果，格式:
             {"standard_no": [web_search 结果条目]}
+        bzxz_id_map: 已知的 bzxz_id 映射 {standard_no: bzxz_id}
 
     Returns:
         {
@@ -207,6 +209,12 @@ def process_single_standard(std_item: dict,
     save_standard_text = sf["save_standard_text"]
     extract_standard_content = sf["extract_standard_content"]
 
+    # ── 获取此标准的已知 bzxz_id ──
+    known_id = None
+    if bzxz_id_map and std_no in bzxz_id_map:
+        known_id = bzxz_id_map[std_no]
+        logger.info("已知 bzxz_id: %s → %d", std_no, known_id)
+
     # ── 获取此标准的搜索结果 ──
     std_search_results = None
     if search_results and std_no in search_results:
@@ -219,8 +227,10 @@ def process_single_standard(std_item: dict,
             if std_no.replace(" ", "") in (r.get("title", "") + r.get("description", ""))
         ]
 
-    # ── 在 bzxz.net 上搜索 ──
-    result = search_on_bzxz(std_no, title, search_results=std_search_results)
+    # ── 在 bzxz.net 上搜索（优先使用已知 ID）──
+    result = search_on_bzxz(std_no, title,
+                            search_results=std_search_results,
+                            bzxz_id=known_id)
 
     if result is None:
         alt_info = {
@@ -284,7 +294,8 @@ def fetch_from_sharing_sites(standards_list: List[dict] = None,
                               max_search_workers: int = 3,
                               max_fetch_workers: int = 3,
                               limit: int = 0,
-                              search_results: dict = None) -> dict:
+                              search_results: dict = None,
+                              bzxz_id_map: dict = None) -> dict:
     """主入口：从分享站抓取标准全文
 
     处理流程:
@@ -304,6 +315,8 @@ def fetch_from_sharing_sites(standards_list: List[dict] = None,
         search_results: 预搜索的结构化结果，格式:
             {"GB/T XXXX-XXXX": [web_search results], ...}
             由 agent 调用 web_search tool 后提供
+        bzxz_id_map: 已知的 bzxz_id 映射 {standard_no: bzxz_id}
+            可通过 search_on_bzxz_list() 预先批量扫描获得
 
     Returns:
         {
@@ -367,6 +380,7 @@ def fetch_from_sharing_sites(standards_list: List[dict] = None,
             std_item={"id": std_id, "standard_no": std_no, "title": title,
                        "raw_data": std.get("raw_data", {})},
             search_results=search_results,  # 传递整个字典用于内部匹配
+            bzxz_id_map=bzxz_id_map,
         )
 
         results.append(r)

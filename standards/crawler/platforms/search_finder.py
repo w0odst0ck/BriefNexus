@@ -427,8 +427,171 @@ def save_standard_text(standard_no: str, content: dict, base_dir: str = None) ->
 
 # ── 主查找接口 ──────────────────────────────────────────
 
+# ── bzxz.net 列表页浏览搜索 ──────────────────────────
+
+def fetch_list_page(category: str = "gb", page: int = 1) -> Optional[str]:
+    """获取 bzxz.net 分类列表页
+
+    Args:
+        category: 分类 (gb=国家标准, hg=化工, qb=轻工, jt=交通, etc.)
+        page: 页码
+
+    Returns:
+        HTML 文本
+    """
+    session = new_session()
+    if category == "gb":
+        url = f"{BZXZ_BASE}/gb/?page={page}"
+    else:
+        url = f"{BZXZ_BASE}/{category}/?page={page}"
+
+    time.sleep(1.0 + (hash(url) % 3) * 0.3)
+    try:
+        r = session.get(url, timeout=30, allow_redirects=True)
+        r.raise_for_status()
+        r.encoding = "utf-8"
+        return r.text
+    except Exception as e:
+        logger.warning("获取列表页失败: %s — %s", url, e)
+        return None
+
+
+def parse_list_page(html: str) -> List[dict]:
+    """解析分类列表页，提取标准条目
+
+    Returns:
+        [{standard_no, title, url, bzxz_id}, ...]
+    """
+    results = []
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 查找所有标准条目
+    for item in soup.select("li, .list-item, .item"):
+        link = item.find("a", href=re.compile(r"/bzxz/\d+\.html"))
+        if not link:
+            continue
+        href = link.get("href", "")
+        text = link.get_text(strip=True)
+
+        # 提取标准号
+        std_match = re.search(r"(GB[ZT/\s]*[\d.]+[-—]\d{4})", text)
+        if not std_match:
+            # 有些条目链接文本 = 标准号
+            continue
+        standard_no = normalize_standard_no(std_match.group(1))
+
+        # 提取 bzxz_id
+        id_match = re.search(r"/bzxz/(\d+)\.html", href)
+        bzxz_id = int(id_match.group(1)) if id_match else 0
+
+        # 提取标题
+        title = re.sub(r"(GB[ZT/\s]*[\d.]+[-—]\d{4})\s*", "", text, count=1).strip()
+
+        results.append({
+            "standard_no": standard_no,
+            "title": title,
+            "url": BZXZ_BASE + href if href.startswith("/") else href,
+            "bzxz_id": bzxz_id,
+        })
+
+    # 如果上面没找到，尝试更宽松的匹配
+    if not results:
+        for link in soup.find_all("a", href=re.compile(r"/bzxz/\d+\.html")):
+            href = link.get("href", "")
+            text = link.get_text(strip=True)
+
+            std_match = re.search(r"(GB[ZT/\s]*[\d.]+[-—]\d{4})", text)
+            if not std_match:
+                continue
+            standard_no = normalize_standard_no(std_match.group(1))
+            id_match = re.search(r"/bzxz/(\d+)\.html", href)
+            bzxz_id = int(id_match.group(1)) if id_match else 0
+            title = re.sub(r"(GB[ZT/\s]*[\d.]+[-—]\d{4})\s*", "", text, count=1).strip()
+
+            results.append({
+                "standard_no": standard_no,
+                "title": title,
+                "url": BZXZ_BASE + href if href.startswith("/") else href,
+                "bzxz_id": bzxz_id,
+            })
+
+    return results
+
+
+def search_on_bzxz_list(target_standards: List[str],
+                         max_pages: int = 20) -> dict:
+    """在 bzxz.net 列表页上批量查找标准
+
+    遍历 bzxz.net 的标准分类列表页，寻找匹配的标准。
+    适合一批标准集中查找（如全库 85 条非采标）。
+
+    Args:
+        target_standards: 目标标准号列表 ["GB/T 39394-2020", ...]
+        max_pages: 最多爬取页数
+
+    Returns:
+        {
+            "found": {standard_no: {url, bzxz_id, ...}, ...},
+            "not_found": [standard_no, ...],
+            "pages_scanned": int,
+        }
+    """
+    # 标准化目标列表
+    targets = {normalize_standard_no(s): s for s in target_standards}
+    target_nos = set(targets.keys())
+
+    found = {}
+    pages_scanned = 0
+
+    for page in range(1, max_pages + 1):
+        html = fetch_list_page("gb", page)
+        if not html:
+            logger.warning("列表页 %d 获取失败，终止", page)
+            break
+
+        entries = parse_list_page(html)
+        if not entries:
+            logger.info("列表页 %d 无条目，终止", page)
+            break
+
+        pages_scanned += 1
+
+        for entry in entries:
+            std_no = entry["standard_no"]
+            if std_no in target_nos and std_no not in found:
+                found[std_no] = entry
+                logger.info("找到目标: %s → /bzxz/%d.html", std_no, entry["bzxz_id"])
+
+        # 如果所有目标都已找到，提前终止
+        if len(found) == len(target_nos):
+            logger.info("所有目标已找到，提前终止")
+            break
+
+        # 流控
+        if page < max_pages:
+            time.sleep(1.5 + (page % 5) * 0.3)
+
+    not_found = [targets[s] for s in target_nos if s not in found]
+
+    logger.info("列表搜索完成: 扫描 %d 页, 找到 %d/%d 条",
+                pages_scanned, len(found), len(target_nos))
+    if not_found:
+        logger.info("未找到: %s", not_found[:10])
+        if len(not_found) > 10:
+            logger.info("... 共 %d 条", len(not_found))
+
+    return {
+        "found": found,
+        "not_found": not_found,
+        "pages_scanned": pages_scanned,
+    }
+
+
+# ── 主查找接口 ──────────────────────────────────────────
+
 def search_on_bzxz(standard_no: str, title: str = "",
-                   search_results: list = None) -> Optional[dict]:
+                   search_results: list = None,
+                   bzxz_id: int = None) -> Optional[dict]:
     """在 bzxz.net 上查找标准
 
     Args:
@@ -436,6 +599,7 @@ def search_on_bzxz(standard_no: str, title: str = "",
         title: 标准标题 (可选)
         search_results: 由 agent 通过 web_search tool 获取的搜索结果
             (列表, 每个元素含 title/url/description/siteName)
+        bzxz_id: 已知的 bzxz.net 标准页 ID (跳过搜索步骤)
 
     Returns:
         {
@@ -449,16 +613,23 @@ def search_on_bzxz(standard_no: str, title: str = "",
     target_no = normalize_standard_no(standard_no)
     logger.info("在 bzxz.net 搜索: %s", target_no)
 
-    # ── 优先使用 agent 提供的搜索结果 ──
+    # ── 确定 URL ──
     bzxz_url = None
-    if search_results:
+
+    # 策略 1: 已知 bzxz_id
+    if bzxz_id:
+        bzxz_url = f"{BZXZ_BASE}/bzxz/{bzxz_id}.html"
+        logger.info("使用已知 ID: /bzxz/%d.html", bzxz_id)
+
+    # 策略 2: 使用 agent 提供的搜索结果
+    if not bzxz_url and search_results:
         candidates = find_bzxz_urls_in_search_results(search_results, target_no)
         if candidates and candidates[0]["score"] > 0:
             bzxz_url = candidates[0]["url"]
             logger.info("通过搜索结果找到 URL: %s (score=%d)", bzxz_url, candidates[0]["score"])
 
     if not bzxz_url:
-        logger.info("未在搜索结果中找到 bzxz.net 链接: %s", target_no)
+        logger.info("未找到 bzxz.net 链接: %s", target_no)
         return None
 
     # ── 抓取页面 ──
