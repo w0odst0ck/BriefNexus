@@ -58,7 +58,7 @@ async def save_cookies(browser_context=None):
         logger.info("正在打开夸克网盘...")
         logger.info("请在弹出的浏览器中手动登录夸克网盘。")
         logger.info("登录完成后，回到终端按 Enter 继续...")
-        await page.goto(QUARK_URL, wait_until="networkidle")
+        await page.goto(QUARK_URL, wait_until="domcontentloaded", timeout=60000)
 
         # 等待用户按回车
         await asyncio.get_event_loop().run_in_executor(None, input)
@@ -99,14 +99,21 @@ async def check_login(page) -> bool:
 
     通过访问夸克首页看是否重定向到登录页
     """
-    await page.goto("https://pan.quark.cn/", wait_until="networkidle",
-                    timeout=30000)
-    current_url = page.url
-    if "passport.quark.cn" in current_url or "login" in current_url:
-        logger.warning("未登录状态，需要重新登录")
-        return False
-    logger.info("夸克网盘已登录 ✅")
-    return True
+    try:
+        await page.goto("https://pan.quark.cn/", wait_until="domcontentloaded",
+                        timeout=60000)
+        await asyncio.sleep(5)  # 等待页面渲染
+        current_url = page.url
+        logger.info("夸克页面 URL: %s", current_url)
+        if "passport.quark.cn" in current_url or "login" in current_url:
+            logger.warning("未登录状态，需要重新登录")
+            return False
+        logger.info("夸克网盘已登录 ✅")
+        return True
+    except Exception as e:
+        logger.warning("夸克页面访问超时 (%s), 尝试直接基于 cookie 下载", e)
+        # 如果页面加载慢但 cookie 有效，还是返回 True
+        return True
 
 
 # ── CLI 入口 ──

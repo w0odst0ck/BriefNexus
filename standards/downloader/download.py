@@ -52,9 +52,22 @@ def _make_safe_filename(std_no: str) -> str:
 
 def _find_bzxz_download_page_url(html: str) -> Optional[str]:
     """从标准详情页 HTML 中提取下载页 URL (/bzxz/dl/{hash}.html)"""
+    # 匹配完整 URL 或相对路径
+    m = re.search(r'href="(https?://www\.bzxz\.net/bzxz/dl/[^"]+\.html)"', html)
+    if m:
+        return m.group(1)
     m = re.search(r'href="(/bzxz/dl/[^"]+\.html)"', html)
     if m:
         return BZXZ_BASE + m.group(1)
+    return None
+
+
+
+def _find_quark_url(html: str) -> Optional[str]:
+    """从 bzxz 下载页 HTML 中提取夸克网盘分享链接"""
+    m = re.search(r'pan\.quark\.cn/s/([^"\' \\]+)', html)
+    if m:
+        return "https://pan.quark.cn/s/" + m.group(1)
     return None
 
 
@@ -117,42 +130,54 @@ async def download_via_quark(context: BrowserContext,
 
         logger.info("[%s] 访问下载页: %s", std_no, dl_page_url.split("/")[-1])
 
-        # ── 步骤 3: 访问下载页（可能触发 JS 重定向到夸克）──
+        # ── 步骤 3: 访问下载页（提取夸克链接或直接文件链接）──
         response = await page.goto(dl_page_url, wait_until="networkidle",
                                    timeout=30000)
-        await asyncio.sleep(3)
+        await asyncio.sleep(2)
 
         current_url = page.url
         final_html = await page.content()
 
-        # 检查是否重定向到夸克
+        # 检查是否直接重定向到夸克
         if "pan.quark.cn" in current_url:
             logger.info("[%s] 已跳转到夸克: %s", std_no, current_url[:60])
             return await _download_from_quark_ui(page, std_no)
 
-        # 检查 HTML 中的 redirect
-        redirect_url = _find_real_download_url(final_html)
-        if redirect_url and "pan.quark.cn" in redirect_url:
-            logger.info("[%s] 发现夸克链接: %s", std_no, redirect_url[:60])
-            await page.goto(redirect_url, wait_until="networkidle", timeout=30000)
+        # 从页面提取夸克分享链接（二维码中的链接）
+        quark_url = _find_quark_url(final_html)
+        if quark_url:
+            logger.info("[%s] 发现夸克分享链接: %s", std_no, quark_url[:60])
+            await page.goto(quark_url, wait_until="domcontentloaded", timeout=60000)
             await asyncio.sleep(3)
             return await _download_from_quark_ui(page, std_no)
 
-        # 尝试直接点击下载按钮
-        try:
-            download_btn = page.locator("a:has-text('点击标准下载地址')").first
-            if await download_btn.is_visible(timeout=3000):
-                async with page.expect_navigation(timeout=15000) as nav_info:
-                    await download_btn.click()
-                await asyncio.sleep(2)
-                if "pan.quark.cn" in page.url:
-                    logger.info("[%s] 点击按钮后跳转夸克", std_no)
-                    return await _download_from_quark_ui(page, std_no)
-        except Exception:
-            pass
+        # 尝试直接下载（down?id= -> JS redirect -> d/file/xxx.rar）
+        redirect_url = _find_real_download_url(final_html)
+        if redirect_url and "pan.quark.cn" not in redirect_url:
+            logger.info("[%s] 发现直链: %s", std_no, redirect_url[:60])
+            # 用 requests 测试（Playwright 可能无法处理 JS 重定向）
+            try:
+                dl_session = requests.Session()
+                dl_session.headers.update({"User-Agent": "Mozilla/5.0"})
+                dl_session.cookies.update(
+                    {c["name"]: c["value"] for c in await context.cookies()}
+                )
+                r = dl_session.get(redirect_url, timeout=30, allow_redirects=True,
+                                   headers={"Referer": "https://www.bzxz.net/"})
+                if r.status_code == 200 and len(r.content) > 10000:
+                    safe_name = _make_safe_filename(std_no)
+                    local_path = os.path.join(DOWNLOAD_DIR, f"{safe_name}.rar")
+                    os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+                    with open(local_path, "wb") as f:
+                        f.write(r.content)
+                    logger.info("[%s] ✅ 直链下载: %s (%.1f KB)",
+                                std_no, local_path, len(r.content) / 1024)
+                    return local_path
+                logger.info("[%s] 直链不可用 (404/太小), 可能已失效", std_no)
+            except Exception as e:
+                logger.info("[%s] 直链下载异常: %s", std_no, e)
 
-        logger.warning("[%s] 下载页未跳转到夸克", std_no)
-        logger.info("[%s] 当前 URL: %s", std_no, current_url)
+        logger.warning("[%s] 未找到可用下载链接", std_no)
         return None
 
     except Exception as e:
@@ -167,7 +192,7 @@ async def _download_from_quark(page: Page,
                                 quark_url: str) -> Optional[str]:
     """从夸克链接直接下载（尝试获取文件 URL）"""
     try:
-        await page.goto(quark_url, wait_until="networkidle", timeout=30000)
+        await page.goto(quark_url, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(2)
         return await _download_from_quark_ui(page, std_no)
     except Exception as e:

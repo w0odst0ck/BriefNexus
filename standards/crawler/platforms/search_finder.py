@@ -658,6 +658,9 @@ def get_download_url_from_page(html: str) -> Optional[str]:
     Returns:
         下载页面 URL，失败返回 None
     """
+    dl_match = re.search(r'<a\s+href="(https?://www\.bzxz\.net/bzxz/dl/[^"]+\.html)"', html)
+    if dl_match:
+        return dl_match.group(1)
     dl_match = re.search(r'<a\s+href="(/bzxz/dl/[^"]+\.html)"', html)
     if dl_match:
         return BZXZ_BASE + dl_match.group(1)
