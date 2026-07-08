@@ -25,9 +25,12 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from .platforms.base import BaseCollector, NewsItem, CST
-from .platforms.arxiv import ArxivCollector
-from .platforms.csa import CsaCollector
-from .platforms.shjianshe import ShjiansheCollector
+from .platforms.white_house import WhiteHouseCollector
+from .platforms.eu_commission import EUCommissionCollector
+from .platforms.nvidia_blog import NvidiaBlogCollector
+from .platforms.globenewswire import GlobeNewswireCollector
+from .platforms.sec_edgar import SECEdgarCollector
+from .platforms.federal_reserve import FederalReserveCollector
 
 logger = logging.getLogger("intel.collector")
 
@@ -42,8 +45,8 @@ SECTORS = [
     ("资本脉搏", "finance", "\U0001f4c8"),
     ("供应链深水", "supply", "\u26d3"),
     ("企业交锋", "corp", "\U0001f3f7"),
-    ("场景新战场", "scene", "\U0001f3af"),
-    ("招标市场", "bid", "\U0001f4dd"),
+    ("政策风向", "policy", "\U0001f4cb"),
+    ("宏观数据", "macro", "\U0001f4ca"),
 ]
 SECTOR_NAMES = {s[1]: s[0] for s in SECTORS}
 SECTOR_KEYS = {s[1] for s in SECTORS}
@@ -105,16 +108,16 @@ def _llm_call(system: str, user: str, max_tokens: int = 4096, timeout: int = 120
 
 # ── 分类 ──
 
-_CLASSIFY_SYSTEM_PROMPT = """你是一个智能照明与智能建筑领域的资讯分类器。
+_CLASSIFY_SYSTEM_PROMPT = """你是一个全球科技与宏观资讯的分类器。
 根据资讯标题，将以下列表中的每条分类到以下板块之一（只返回JSON数组）：
 
-expo=行业大势(展览/趋势/报告/政策/标准)
-tech=技术突破(MicroLED/芯片/光学/封装/专利)
-finance=资本脉搏(IPO/融资/投资/收购)
-supply=供应链深水(产线/产能/材料/制造)
-corp=企业交锋(品牌/公司战略/合作)
-scene=场景新战场(智能建筑/车载/植物/医疗照明)
-bid=招标市场(招标/投标/中标/标讯)
+expo=行业大势(市场趋势/行业报告/展览)
+tech=技术突破(AI/ML/GPGPU/机器人/网络安全/芯片)
+finance=资本脉搏(财报/IPO/投融资/并购)
+supply=供应链深水(半导体制造/芯片产能/晶圆代工)
+corp=企业交锋(企业合作/产品发布/品牌)
+policy=政策风向(AI法案/出口管制/贸易政策/制裁)
+macro=宏观数据(利率/GDP/通胀/就业/国债)
 
 输入是一个字符串列表，输出是一个板块key列表。"""
 
@@ -122,20 +125,20 @@ bid=招标市场(招标/投标/中标/标讯)
 def _classify_rules(title: str) -> str:
     """规则分类（无需 LLM）"""
     t = title
-    if re.search(r"(标讯|招标|投标|控制价)", t):
-        return "bid"
-    if re.search(r"(MicroLED|Micro LED|OLED|MiniLED|全彩|芯片|光学|专利|封装|半导体)", t, re.IGNORECASE):
+    if re.search(r"(AI|人工智能|Machine Learning|LLM|大模型|GPU|机器人|robot|cyber|security|自动驾驶|quantum)", t, re.IGNORECASE):
         return "tech"
-    if re.search(r"(上市|IPO|融资|募资|暴涨|涨停|北交所)", t):
+    if re.search(r"(财报|earnings|revenue|Q[1-4]|IPO|融资|投资|acquisition|merger|并购|dividend)", t, re.IGNORECASE):
         return "finance"
-    if re.search(r"(展览|展会|光亚展|趋势|战略|报告|市场)", t):
-        return "expo"
-    if re.search(r"(产线|量产|供货|供应|面板|项目封顶|扩建|产能|制造|签约)", t):
+    if re.search(r"(fab|产能|chip|semiconductor|wafer|制造|晶圆|supply chain|短缺|TSMC|台积电)", t, re.IGNORECASE):
         return "supply"
-    if re.search(r"(植物|车载|选购|抗菌|护眼|酒店|场景)", t):
-        return "scene"
-    if re.search(r"(品牌|排名|冠名|仲裁)", t):
+    if re.search(r"(partnership|合作|launch|发布|product|strategic|alliance)", t, re.IGNORECASE):
         return "corp"
+    if re.search(r"(AI Act|tariff|export control|sanction|regulation|法案|出口管制|贸易|政策|policy)", t, re.IGNORECASE):
+        return "policy"
+    if re.search(r"(interest rate|GDP|inflation|CPI|就业|unemployment|国债|treasury|联邦基金|美联储)", t, re.IGNORECASE):
+        return "macro"
+    if re.search(r"(report|趋势|market|行业|展)", t):
+        return "expo"
     return "expo"
 
 
@@ -192,7 +195,7 @@ def build_markdown(items: List[NewsItem]) -> str:
         grouped.setdefault(it.sector, []).append(it)
 
     lines = [
-        f"# 情报简报 — {TODAY}",
+        f"# BriefNexus 全球科技与宏观资讯简报 — {TODAY}",
         "",
         f"**采集时间:** {datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S')}",
         f"**总条数:** {len(items)}",
@@ -209,15 +212,31 @@ def build_markdown(items: List[NewsItem]) -> str:
         lines.append(f"## {icon} {name} ({len(group)} 条)")
         lines.append("")
         for it in group:
-            tag = f"[{it.source}]"
-            checkbox = "- [ ]"  # 待勾选
-            lines.append(f"{checkbox} {tag} **{it.title}**")
+            domain_tag = f"[{it.domain}]" if it.domain else ""
+            source_tag = f"[{it.source}]"
+            checkbox = "- [ ]"
+            # 摘要截断至300字
+            summary = (it.summary[:300] + "..." ) if len(it.summary) > 300 else it.summary
+            lines.append(f"{checkbox} {domain_tag}{source_tag} **{it.title}**")
             if it.date:
                 lines.append(f"  - 📅 {it.date}")
             lines.append(f"  - 🔗 {it.url}")
+            if summary:
+                lines.append(f"  - {summary}")
             lines.append("")
         lines.append("---")
         lines.append("")
+
+    # 底部来源概况表
+    lines.append("## 📊 来源概况")
+    lines.append("")
+    lines.append("| 数据源 | 类型 | 条数 |")
+    lines.append("|--------|------|------|")
+    from collections import Counter
+    source_counter = Counter((it.source, it.domain) for it in items)
+    for (src, dom), cnt in sorted(source_counter.items()):
+        lines.append(f"| {src} | {dom} | {cnt} |")
+    lines.append("")
 
     return "\n".join(lines)
 
@@ -259,11 +278,14 @@ def load_platforms(config_path: str = None) -> list:
 
     sources_cfg = cfg.get("sources", "enabled", fallback="")
     if not sources_cfg:
-        logger.warning("未配置数据源，使用默认内置源")
+        logger.warning("未配置数据源，使用默认内置源(v2)")
         return [
-            ArxivCollector(),
-            CsaCollector(),
-            ShjiansheCollector(),
+            WhiteHouseCollector(),
+            EUCommissionCollector(),
+            NvidiaBlogCollector(),
+            GlobeNewswireCollector(),
+            SECEdgarCollector(),
+            FederalReserveCollector(),
         ]
 
     platforms = []
@@ -287,11 +309,14 @@ def load_platforms(config_path: str = None) -> list:
             logger.warning("加载平台失败 [%s]: %s", name, e)
 
     if not platforms:
-        logger.warning("无可用平台，使用默认内置源")
+        logger.warning("无可用平台，使用默认内置源(v2)")
         return [
-            ArxivCollector(),
-            CsaCollector(),
-            ShjiansheCollector(),
+            WhiteHouseCollector(),
+            EUCommissionCollector(),
+            NvidiaBlogCollector(),
+            GlobeNewswireCollector(),
+            SECEdgarCollector(),
+            FederalReserveCollector(),
         ]
 
     return platforms
