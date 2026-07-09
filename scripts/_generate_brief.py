@@ -14,7 +14,7 @@ _cfg = configparser.ConfigParser()
 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
     _cfg.read_file(f)
 LLM_BASE = _cfg.get("api", "base_url")
-LLM_KEY = _cfg.get("api", "api_key")
+LLM_KEY = os.environ.get("DEEPSEEK_API_KEY") or _cfg.get("api", "api_key")
 LLM_MODEL = _cfg.get("api", "model")
 
 NEWS_FILE = r"D:\NOTES\zzz\BriefNexus\news\news_2026-06-29.md"

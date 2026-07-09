@@ -79,7 +79,7 @@ def _load_config():
 def _llm_call(system: str, user: str, max_tokens: int = 4096, timeout: int = 120):
     """LLM 调用，异常时不崩溃"""
     cfg = _load_config()
-    api_key = cfg.get("api", "api_key", fallback="")
+    api_key = os.environ.get("DEEPSEEK_API_KEY") or cfg.get("api", "api_key", fallback="")
     if not api_key:
         logger.warning("LLM 不可用: API Key 未配置")
         return None

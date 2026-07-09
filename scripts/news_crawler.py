@@ -30,7 +30,7 @@ _api_cfg = configparser.ConfigParser()
 with open(CONFIG_FILE, "r", encoding="utf-8") as _f:
     _api_cfg.read_file(_f)
 LLM_BASE = _api_cfg.get("api", "base_url", fallback="https://api.deepseek.com")
-LLM_KEY  = _api_cfg.get("api", "api_key", fallback="")
+LLM_KEY  = os.environ.get("DEEPSEEK_API_KEY") or _api_cfg.get("api", "api_key", fallback="")
 LLM_MODEL = _api_cfg.get("api", "model", fallback="deepseek-v4-flash")
 
 # ── 板块体系 ──────────────────────────────────────────────────

@@ -37,7 +37,7 @@ DIRS = {
 _cfg_obj = configparser.ConfigParser()
 _cfg_obj.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), "crawler_config.ini"), encoding="utf-8")
 LLM_BASE = _cfg_obj.get("api", "base_url")
-LLM_KEY = _cfg_obj.get("api", "api_key")
+LLM_KEY = os.environ.get("DEEPSEEK_API_KEY") or _cfg_obj.get("api", "api_key")
 LLM_MODEL = _cfg_obj.get("api", "model")
 
 CST = timezone(timedelta(hours=8))
