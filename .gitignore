@@ -33,3 +33,6 @@ memory/
 standards/standards_config.ini
 *.config.ini
 *.ini
+
+# Sensitive config - DO NOT COMMIT
+scripts/crawler_config.ini

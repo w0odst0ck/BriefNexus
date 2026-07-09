@@ -1,0 +1,4 @@
+[api]
+base_url = https://api.deepseek.com
+api_key = sk-your-api-key-here
+model = deepseek-v4-flash
