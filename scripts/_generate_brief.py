@@ -9,6 +9,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 import requests
 import configparser
 
+from _dotenv import load_project_env; load_project_env()
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crawler_config.ini")
 _cfg = configparser.ConfigParser()
 with open(CONFIG_FILE, "r", encoding="utf-8") as f:

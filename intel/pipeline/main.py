@@ -13,6 +13,9 @@ import logging
 import os
 import re
 import sys
+
+# load .env from project root before reading any config
+from scripts._dotenv import load_project_env; load_project_env()
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 

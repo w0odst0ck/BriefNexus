@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Phase 3: 基于联网核实的 brief.md 生成 report.md + topic.md"""
 import os, sys, configparser
+from _dotenv import load_project_env; load_project_env()
 sys.stdout.reconfigure(encoding="utf-8")
 import requests
 

@@ -33,7 +33,8 @@ DIRS = {
     "topic_dir":  os.path.join(BASE, "topic"),
 }
 
-# load api config (avoid redaction by using intermediate)
+# load .env (if exists) + api config
+from _dotenv import load_project_env; load_project_env()
 _cfg_obj = configparser.ConfigParser()
 _cfg_obj.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), "crawler_config.ini"), encoding="utf-8")
 LLM_BASE = _cfg_obj.get("api", "base_url")
