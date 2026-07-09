@@ -1,11 +1,8 @@
-#!/usr/bin/env python3
 """
 情报采集 — 平台适配器基类
 
-所有数据源（arXiv、CSA、上海住建委等）继承此基类，
-实现统一的采集接口。
+所有数据源采集器继承此基类，实现统一的采集接口。
 """
-
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -13,7 +10,6 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 CST = timezone(timedelta(hours=8))
-
 logger = logging.getLogger("intel.collector")
 
 
@@ -25,16 +21,12 @@ class NewsItem:
     summary: str = ""
     date_obj: Optional[datetime] = None
     source: str = ""
-    domain: str = "综合"
+    domain: str = ""
     sector: str = ""
 
     @property
     def date(self) -> str:
         return self.date_obj.strftime("%Y-%m-%d") if self.date_obj else ""
-
-    def __hash__(self):
-        import hashlib
-        return hash(hashlib.md5(self.title.encode()).hexdigest())
 
 
 class BaseCollector(ABC):
@@ -53,7 +45,6 @@ class BaseCollector(ABC):
         ...
 
     def _is_recent(self, date_obj: Optional[datetime]) -> bool:
-        """检查是否在时效范围内"""
         if date_obj is None:
             return True
         return date_obj >= self.cutoff

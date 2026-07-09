@@ -1,0 +1,22 @@
+# 数据源配置
+# 不在此文件中的采集器默认启用，参数使用默认值
+
+sources:
+  white_house:
+    enabled: true
+    max_age: 7
+  eu_commission:
+    enabled: true
+    max_age: 7
+  nvidia_blog:
+    enabled: true
+    max_age: 7
+  globenewswire:
+    enabled: true
+    max_age: 7
+  sec_edgar:
+    enabled: true
+    max_age: 14
+  federal_reserve:
+    enabled: true
+    max_age: 14

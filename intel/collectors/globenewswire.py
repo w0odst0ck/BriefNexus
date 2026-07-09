@@ -6,7 +6,8 @@ import logging, re, time
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from bs4 import BeautifulSoup
-from .base import BaseCollector, NewsItem, CST
+from intel.core.registry import register
+from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.globenewswire")
 
@@ -14,6 +15,7 @@ GN_RSS = "https://www.globenewswire.com/RssFeed/industry/13-Technology/feed.xml"
 GN_TOPIC_RSS = "https://www.globenewswire.com/RssFeed/subjectcode/13-Software/feed.xml"
 
 
+@register("globenewswire")
 class GlobeNewswireCollector(BaseCollector):
     source_name = "globenewswire"
     display_name = "GlobeNewswire"

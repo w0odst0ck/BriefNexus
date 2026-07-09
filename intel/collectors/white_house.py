@@ -6,7 +6,8 @@ import logging, re, time
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from bs4 import BeautifulSoup
-from .base import BaseCollector, NewsItem, CST
+from intel.core.registry import register
+from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.whitehouse")
 
@@ -14,6 +15,7 @@ WH_BASE = "https://www.whitehouse.gov"
 WH_URL = f"{WH_BASE}/briefing-room/"
 
 
+@register("white_house")
 class WhiteHouseCollector(BaseCollector):
     source_name = "whitehouse"
     display_name = "White House"

@@ -6,7 +6,8 @@ import logging, re, time, xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from bs4 import BeautifulSoup
-from .base import BaseCollector, NewsItem, CST
+from intel.core.registry import register
+from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.sec")
 
@@ -46,6 +47,7 @@ RELEVANT_ITEMS = [
 ]
 
 
+@register("sec_edgar")
 class SECEdgarCollector(BaseCollector):
     source_name = "sec_edgar"
     display_name = "SEC EDGAR"
