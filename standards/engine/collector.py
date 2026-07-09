@@ -2,6 +2,7 @@
 采集调度引擎 — 协调多平台采集、去重、导出、SQLite 入库
 """
 
+import json
 import logging
 import os
 import re
@@ -262,6 +263,10 @@ def run_cli():
                          help="单条夸克分享链接 (配合 --save-quark)")
     p_fetch.add_argument("--bzxz-map",
                          help="Playwright: bzxz_id 映射 JSON")
+    p_fetch.add_argument("--iec", action="store_true",
+                         help="从 IEC Webstore 采集采标标准元数据")
+    p_fetch.add_argument("--iec-limit", type=int, default=0,
+                         help="IEC 采集数量上限 (0=全部)")
 
     # read: 打开本地 PDF
 
@@ -821,6 +826,79 @@ def _run_fetch_alt(args):
     print(f"{'=' * 60}")
 
 
+
+def _run_fetch_iec(args):
+    """从 IEC Webstore 采集采标标准元数据"""
+    from standards.crawler.platforms.iec import IECCollector
+    from standards.engine.storage import StandardDB
+
+    db = StandardDB(args.db)
+    limit = args.iec_limit or None
+
+    # 查询所有采标标准（有 intl_source 的）
+    conn = db._conn
+    rows = conn.execute(
+        "SELECT id, standard_no, title, intl_source, raw_data FROM standards "
+        "WHERE is_adopted = 1 AND intl_source IS NOT NULL AND intl_source != ''"
+        + (" LIMIT ?" if limit else ""),
+        (limit,) if limit else ()
+    ).fetchall()
+
+    if not rows:
+        print("没有找到采标标准（intl_source 为空）")
+        db.close()
+        return
+
+    # 按 intl_source 分组去重
+    iec_map = {}
+    for r in rows:
+        src = r["intl_source"].strip()
+        if src and src not in iec_map:
+            iec_map[src] = dict(r)
+
+    print(f"{'='*60}")
+    print(f"  IEC Webstore 元数据采集")
+    print(f"  DB 采标: {len(rows)} 条")
+    print(f"  唯一 IEC 标准号: {len(iec_map)} 个")
+    print(f"{'='*60}")
+
+    collector = IECCollector(delay=2.0)
+    success = 0
+    failed = 0
+    skipped = 0
+
+    for idx, (iec_no, std) in enumerate(sorted(iec_map.items()), 1):
+        # 标准化 IEC 号
+        full_iec = iec_no if iec_no.upper().startswith("IEC") else f"IEC {iec_no}"
+        print(f"[{idx}/{len(iec_map)}] {full_iec} ... ", end="", flush=True)
+
+        # 检查是否已有缓存
+        raw = json.loads(std["raw_data"]) if std["raw_data"] else {}
+        if raw.get("iec_meta"):
+            print(f"⏭️  已缓存")
+            skipped += 1
+            continue
+
+        meta = collector.search_by_iec_no(full_iec)
+        if meta and meta.get("confirmed"):
+            raw["iec_meta"] = meta
+            conn.execute(
+                "UPDATE standards SET raw_data = ? WHERE id = ?",
+                (json.dumps(raw, ensure_ascii=False), std["id"])
+            )
+            conn.commit()
+            print(f"✅ 确认存在")
+            success += 1
+        else:
+            print("❌ autocomplete 未确认")
+            failed += 1
+
+        import time
+        time.sleep(collector.delay)
+
+    db.close()
+    print(f"完成: {success} 成功 / {failed} 失败 / {skipped} 跳过")
+
 def _run_fetch(args):
     """下载标准全文"""
     TIME_FMT = "%Y-%m-%d %H:%M:%S"
@@ -849,6 +927,12 @@ def _run_fetch(args):
             loop.run_until_complete(batch_save(items))
             return
         _run_fetch_playwright(args)
+        return
+
+
+    # ── IEC Webstore 元数据采集模式 ────────────────────
+    if args.iec:
+        _run_fetch_iec(args)
         return
 
     # ── 替代来源模式 (bzxz.net) ────────────────────────

@@ -36,3 +36,8 @@ standards/standards_config.ini
 
 # Sensitive config - DO NOT COMMIT
 scripts/crawler_config.ini
+
+# Privacy - Quark links, download metadata, cookies
+standards/downloads/_download_manifest.json
+standards/downloads/_quark_cookies/
+standards/downloads/_bzxz_id_map.json

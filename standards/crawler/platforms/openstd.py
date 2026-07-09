@@ -177,12 +177,12 @@ class OpenStdCollector(BaseStandardCollector):
     def check_availability(self, hcno: str) -> dict:
         """检查标准是否有全文可下载
 
-        注意: "暂无全文" 文本存在于 JS i18n 字典中，不代表当前标准无全文。
-        真实判断方式：尝试访问 viewGb 端点检查是否返回 PDF。
+        必须使用 /bzgk/gb/ 旧路径（自动 301→/bzgk/std/）
+        才能正确建立 session 状态。
 
         Returns:
             {
-                "available": bool,    # 是否有全文（经过实际试探）
+                "available": bool,    # 是否有全文
                 "is_adopted": bool,   # 是否采标
                 "title": str,
                 "standard_no": str,
@@ -193,9 +193,12 @@ class OpenStdCollector(BaseStandardCollector):
         if not hcno:
             return result
 
+        gb_base = "https://openstd.samr.gov.cn/bzgk/gb"
+
         try:
-            # 先访问详情页（建立 session）
-            r = self.session.get(f"{DETAIL_URL}?hcno={hcno}", timeout=15,
+            # Step 1: 详情页（建立 session）
+            detail_url = f"{gb_base}/newGbInfo?hcno={hcno}"
+            r = self.session.get(detail_url, timeout=15,
                                  allow_redirects=True)
             html = r.text
 
@@ -205,19 +208,19 @@ class OpenStdCollector(BaseStandardCollector):
                 result["title"] = title_m.group(1).replace("国家标准|", "")
                 result["standard_no"] = result["title"]
 
-            # 尝试 viewGb 试探是否可下载
-            # 如果不需要验证码，会返回 PDF；否则返回 0 字节或错误页
-            trigger_url = f"{DOWNLOAD_TRIGGER}?type=download&hcno={hcno}&request_locale=zh"
+            # Step 2: showGb 触发下载验证
+            trigger_url = f"{gb_base}/showGb?type=download&hcno={hcno}&request_locale=zh"
             self.session.get(trigger_url, timeout=15, allow_redirects=True,
-                              headers={"Referer": DETAIL_URL})
+                              headers={"Referer": detail_url})
 
-            probe = self.session.get(f"{PDF_URL}?hcno={hcno}", timeout=30)
+            # Step 3: viewGb 试探是否返回 PDF
+            probe = self.session.get(f"{gb_base}/viewGb?hcno={hcno}", timeout=30)
             if probe.status_code == 200 and probe.content and probe.content[:4] == b"%PDF":
                 result["available"] = True
                 result["is_adopted"] = False
             else:
                 result["available"] = False
-                # 采标标记
+                # 尝试从详情页的采标标记判断
                 result["is_adopted"] = bool(re.search(r'采[^非]', html))
 
             return result
