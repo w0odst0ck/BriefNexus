@@ -27,17 +27,15 @@ standards/output/standards_*.md
 *~
 .DS_Store
 
-# Privacy - project logs, database files, sensitive config
-memory/
-*.db
-standards/standards_config.ini
-*.config.ini
-*.ini
-
 # Sensitive config - DO NOT COMMIT
 scripts/crawler_config.ini
 
-# Privacy - Quark links, download metadata, cookies
+# Privacy - logs, plans, cookies, configs
+memory/
+plan/
+standards/standards_config.ini
+*.ini
+*.db
 standards/downloads/_download_manifest.json
 standards/downloads/_quark_cookies/
 standards/downloads/_bzxz_id_map.json
