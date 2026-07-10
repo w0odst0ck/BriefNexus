@@ -21,6 +21,9 @@ standards/output/_latest.json
 standards/output/standards_*.json
 standards/output/standards_*.md
 
+# Intel output (regenerated)
+intel/output/
+
 # Editor
 *.swp
 *.swo
