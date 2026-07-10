@@ -1,33 +1,42 @@
-# BriefNexus — 多源情报采集与分析工作流
+# BriefNexus — 多源情报采集 + 标准全文检索系统
 
-> 基于 OpenClaw + LLM 的多源情报采集与分析系统。
-> 支持任意领域的学术论文、政策动态、政府公告三路数据源采集与交叉分析。
-> 内置示例：智能照明与智能建筑领域（arXiv/CSA联盟/上海住建委）。
+> 双引擎：**情报采集分析**（intel）+ **行业标准检索与全文采集**（standards）  
+> 内置示例领域：智能照明与智能建筑  
+> v1 状态：355 条照明标准元数据 + 108 条 PDF 全文（484MB）
 
 ---
 
-## 项目架构
+## 项目结构
 
 ```
-D:\NOTES\zzz\BriefNexus\
-├── scripts\                    ← 核心脚本
-│   ├── news_crawler.py         ← Phase 1: 多源采集 + LLM 分类
-│   ├── run_pipeline.py         ← Phase 2/3: 导出 + LLM 生成
-│   ├── pipeline.bat            ← Windows 快捷启动
-│   └── crawler_config.ini      ← API 配置（Key 在此修改）
+BriefNexus/
+├── intel/                       ← 情报采集与分析模块
+│   ├── collector/platforms/    ← 数据源适配器（白宫/EU/NVIDIA/GNW/SEC/Fed）
+│   ├── intel_config.ini       ← 数据源配置
+│   └── output/                 ← 采集结果
 │
-├── news\
-│   ├── news\                   ← Phase 1: 原始采集数据（含勾选清单）
-│   ├── brief\                  ← Phase 2.5: 联网核实后的精选简报
-│   └── prompt\                 ← Phase 2: 导出到 LLM 网页端的提示词
+├── standards/                   ← 行业标准检索与全文采集模块
+│   ├── crawler/                ← 采集引擎
+│   │   ├── main.py            ← CLI 入口
+│   │   ├── downloader.py      ← PDF 下载器（openstd / bzxz.net）
+│   │   ├── utils.py           ← HTTP 工具
+│   │   └── platforms/         ← 平台适配器
+│   │       ├── openstd.py     ← 全国标准信息公共服务平台
+│   │       ├── search_finder.py ← bzxz.net 搜索引擎
+│   │       └── alt_sources.py ← 替代来源编排器
+│   ├── engine/                 ← 数据引擎
+│   │   ├── collector.py       ← 采集调度 CLI（collect/search/list/stats/tree）
+│   │   ├── storage.py         ← SQLite + FTS5 存储
+│   │   ├── exporter.py        ← 导出器
+│   │   ├── dedup.py           ← 去重与合并
+│   │   ├── intl_mapper.py     ← 采标 ↔ IEC/CIE 映射
+│   │   └── ics_tree.py        ← ICS 分类树
+│   ├── downloads/              ← PDF 全文存储（108 条，484MB）
+│   └── README.md              ← 模块说明
 │
-├── report\                     ← Phase 3: 问题驱动型分析报告
-├── topic\                      ← Phase 3: 社群话题帖
-│
-├── intel\                       ← 情报采集与分析模块（2026-07-07 封装）
-│   ├── collector\/platforms\   ← 数据源适配器（arXiv / CSA / 上海住建委）
-│   ├── pipeline\              ← 导出 prompt + 报告生成
-│   └── output\                ← 采集结果
+├── scripts/                     ← 旧版采集脚本（向后兼容）
+├── news/                        ← 旧版采集结果
+├── memory/                      ← 项目日志
 │
 └── standards\                  ← 行业标准采集模块（2026-07-07 新增）
     ├── crawler\/platforms\     ← 标准平台适配器（SAMR / SPC / CSRES）
