@@ -20,3 +20,13 @@ sources:
   federal_reserve:
     enabled: true
     max_age: 14
+
+  arxiv_perception:
+    enabled: true
+    max_age: 14
+    notes: "arXiv CS.CV 自动驾驶感知+光照论文追踪"
+
+  adas_vehicle_intl:
+    enabled: true
+    max_age: 30
+    notes: "ADAS & Autonomous Vehicle International 行业季刊"
