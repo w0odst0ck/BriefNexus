@@ -6,20 +6,8 @@ __pycache__/
 .env
 .venv
 
-# Database
-standards/standards.db
-
-# Downloads (PDFs + text extracts)
-standards/downloads/*.pdf
-standards/downloads/*.txt
-standards/downloads/*.zip
-standards/downloads/*.rar
-standards/downloads/_hcno_results.json
-
-# Output (regenerated)
-standards/output/_latest.json
-standards/output/standards_*.json
-standards/output/standards_*.md
+# Standards — 数据采集层代码+数据全部不入 git
+standards/
 
 # Intel output (regenerated)
 intel/output/
@@ -30,15 +18,11 @@ intel/output/
 *~
 .DS_Store
 
-# Sensitive config - DO NOT COMMIT
+# Sensitive config
 scripts/crawler_config.ini
 
-# Privacy - logs, plans, cookies, configs
+# Privacy
 memory/
 plan/
-standards/standards_config.ini
 *.ini
 *.db
-standards/downloads/_download_manifest.json
-standards/downloads/_quark_cookies/
-standards/downloads/_bzxz_id_map.json
