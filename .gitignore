@@ -6,8 +6,11 @@ __pycache__/
 .env
 .venv
 
-# Standards — 数据采集层代码+数据全部不入 git
-standards/
+# Standards — 仅排除数据文件，代码保留
+standards/standards.db
+standards/standards_config.ini
+standards/downloads/
+standards/output/
 
 # Intel output (regenerated)
 intel/output/
