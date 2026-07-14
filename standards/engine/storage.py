@@ -77,6 +77,7 @@ class StandardDB:
                 summary     TEXT,
                 collected_at TEXT,
                 raw_data    TEXT,       /* JSON 原始数据 */
+                local_path  TEXT DEFAULT '',
                 created_at  TEXT DEFAULT (datetime('now', 'localtime')),
                 updated_at  TEXT DEFAULT (datetime('now', 'localtime'))
             );
@@ -181,6 +182,14 @@ class StandardDB:
                       )}
         now = datetime.now(CST).strftime("%Y-%m-%d %H:%M:%S")
 
+        # 从 raw_data 中提取 scopes（如果没有显式指定）
+        scopes_val = item.get("scopes", "")
+        if not scopes_val:
+            # _sector 是采集时写入的 key，rename 后变成 sector
+            sector = raw_data.get("sector", "") or raw_data.get("_sector", "")
+            if sector:
+                scopes_val = sector
+
         sql = """
             INSERT INTO standards
                 (dedup_key, title, standard_no, publisher, publish_date,
@@ -214,7 +223,7 @@ class StandardDB:
             item.get("url", ""),
             item.get("source", ""),
             item.get("ics_code", ""),
-            item.get("scopes", ""),
+            scopes_val,
             item.get("summary", ""),
             item.get("collected_at", ""),
             json.dumps(raw_data, ensure_ascii=False) if raw_data else "",
@@ -486,8 +495,8 @@ class StandardDB:
     def filter(self, status: str = None, category: str = None,
                source: str = None, standard_no: str = None,
                publisher: str = None, date_from: str = None,
-               date_to: str = None, limit: int = 50,
-               offset: int = 0) -> List[Dict[str, Any]]:
+               date_to: str = None, scopes: str = None,
+               limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
         """精确过滤查询"""
         conditions = []
         params = []
@@ -513,6 +522,9 @@ class StandardDB:
         if date_to:
             conditions.append("publish_date <= ?")
             params.append(date_to)
+        if scopes:
+            conditions.append("scopes = ?")
+            params.append(scopes)
 
         where = " AND ".join(conditions) if conditions else "1=1"
 
@@ -530,7 +542,7 @@ class StandardDB:
     def filter_count(self, status: str = None, category: str = None,
                      source: str = None, standard_no: str = None,
                      publisher: str = None, date_from: str = None,
-                     date_to: str = None) -> int:
+                     date_to: str = None, scopes: str = None) -> int:
         """过滤命中总数"""
         conditions = []
         params = []
@@ -555,6 +567,9 @@ class StandardDB:
         if date_to:
             conditions.append("publish_date <= ?")
             params.append(date_to)
+        if scopes:
+            conditions.append("scopes = ?")
+            params.append(scopes)
 
         where = " AND ".join(conditions) if conditions else "1=1"
 
