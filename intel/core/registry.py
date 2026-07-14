@@ -31,47 +31,56 @@ def register(name: str = None):
     return decorator
 
 
-def get_collector_classes(config: dict = None) -> dict:
+def get_collector_classes(config: dict = None, domains: str = None) -> dict:
     """获取采集器类字典
 
     Args:
         config: 可选配置字典，格式:
             {"sources": {"white_house": {"enabled": True, "max_age": 7}, ...}}
             不传则返回全部注册的采集器
+        domains: 逗号分隔的领域字符串，如 "finance,self_driving"
+                 筛选拥有任一匹配领域的采集器
 
     Returns:
         {name: collector_class, ...}
     """
     if config is None:
-        return dict(_COLLECTORS)
-
-    sources_cfg = config.get("sources", {})
-    if not sources_cfg:
-        return dict(_COLLECTORS)
-
-    result = {}
-    for name, cls in _COLLECTORS.items():
-        if name in sources_cfg:
-            source_cfg = sources_cfg[name]
-            if source_cfg.get("enabled", True):
-                result[name] = cls
+        result = dict(_COLLECTORS)
+    else:
+        sources_cfg = config.get("sources", {})
+        if not sources_cfg:
+            result = dict(_COLLECTORS)
         else:
-            # 未在配置中显式列出的默认启用
-            result[name] = cls
+            result = {}
+            for name, cls in _COLLECTORS.items():
+                if name in sources_cfg:
+                    source_cfg = sources_cfg[name]
+                    if source_cfg.get("enabled", True):
+                        result[name] = cls
+                else:
+                    result[name] = cls
+
+    if domains:
+        domain_set = set(d.strip() for d in domains.split(","))
+        result = {
+            n: c for n, c in result.items()
+            if hasattr(c, "domains") and domain_set & set(c.domains)
+        }
+
     return result
 
 
-def instantiate_collectors(config: dict = None) -> list:
+def instantiate_collectors(config: dict = None, domains: str = None) -> list:
     """实例化启用的采集器
 
     Args:
-        config: 可选配置，支持每源参数:
-            {"sources": {"white_house": {"enabled": True, "max_age": 14}}}
+        config: 可选配置，支持每源参数
+        domains: 逗号分隔的领域字符串
 
     Returns:
         [BaseCollector_instance, ...]
     """
-    classes = get_collector_classes(config)
+    classes = get_collector_classes(config, domains=domains)
     sources_cfg = (config or {}).get("sources", {})
 
     instances = []

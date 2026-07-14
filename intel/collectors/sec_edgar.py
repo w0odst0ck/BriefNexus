@@ -50,6 +50,7 @@ RELEVANT_ITEMS = [
 @register("sec_edgar")
 class SECEdgarCollector(BaseCollector):
     source_name = "sec_edgar"
+    domains = ["finance", "semiconductor"]
     display_name = "SEC EDGAR"
 
     def crawl(self, sess) -> List[NewsItem]:

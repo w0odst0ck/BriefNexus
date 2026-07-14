@@ -18,6 +18,7 @@ WH_URL = f"{WH_BASE}/briefing-room/"
 @register("white_house")
 class WhiteHouseCollector(BaseCollector):
     source_name = "whitehouse"
+    domains = ["finance", "self_driving", "semiconductor"]
     display_name = "White House"
 
     def crawl(self, sess) -> List[NewsItem]:

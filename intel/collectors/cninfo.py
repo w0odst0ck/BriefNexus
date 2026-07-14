@@ -29,6 +29,7 @@ COLUMNS = {
 class CninfoCollector(BaseCollector):
     source_name = "cninfo"
     display_name = "巨潮资讯"
+    domains = ["finance"]
 
     def crawl(self, sess) -> List[NewsItem]:
         items = []

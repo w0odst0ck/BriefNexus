@@ -19,6 +19,7 @@ EASTMONEY_HOME = "https://www.eastmoney.com/"
 @register("eastmoney")
 class EastMoneyCollector(BaseCollector):
     source_name = "eastmoney"
+    domains = ["finance"]
     display_name = "东方财富"
 
     def crawl(self, sess) -> List[NewsItem]:

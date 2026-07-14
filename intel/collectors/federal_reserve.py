@@ -17,6 +17,7 @@ FED_RSS = "https://www.federalreserve.gov/feeds/press_all.xml"
 @register("federal_reserve")
 class FederalReserveCollector(BaseCollector):
     source_name = "federal_reserve"
+    domains = ["finance"]
     display_name = "Federal Reserve"
 
     def crawl(self, sess) -> List[NewsItem]:

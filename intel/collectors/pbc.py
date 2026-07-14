@@ -28,6 +28,7 @@ PBC_GOV = "https://www.pbc.gov.cn"
 class PbcCollector(BaseCollector):
     source_name = "pbc"
     display_name = "中国人民银行"
+    domains = ["finance"]
 
     def crawl(self, sess) -> List[NewsItem]:
         items = []

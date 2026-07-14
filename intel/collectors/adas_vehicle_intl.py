@@ -33,6 +33,7 @@ INTERESTING_TOPICS = [
 class AdasVehicleCollector(BaseCollector):
     source_name = "adas_vehicle_intl"
     display_name = "ADAS & Autonomous Vehicle Intl"
+    domains = ["self_driving"]
 
     def crawl(self, sess) -> List[NewsItem]:
         items = []

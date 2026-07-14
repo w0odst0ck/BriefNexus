@@ -63,22 +63,38 @@ def _sess():
     return s
 
 
-def cmd_list():
-    """列出所有已注册采集器"""
-    classes = get_collector_classes()
-    print(f"已注册采集器 ({len(classes)}):")
-    for name, cls in sorted(classes.items()):
-        doc = (cls.__doc__ or "").strip().split("\n")[0] if cls.__doc__ else ""
-        print(f"  {name:20s} {doc}")
+def cmd_list(domains: str = None):
+    """列出已注册采集器（可按领域筛选）"""
+    all_classes = get_collector_classes()
+    if domains:
+        classes = get_collector_classes(domains=domains)
+        print(f"已注册采集器 — 领域: {domains} ({len(classes)}):")
+        for name, cls in sorted(classes.items()):
+            ds = ", ".join(getattr(cls, "domains", []))
+            print(f"  {name:20s} [{ds}]")
+    else:
+        # 按领域分组展示
+        domain_map = {}
+        for name, cls in all_classes.items():
+            ds = getattr(cls, "domains", [])
+            for d in ds:
+                domain_map.setdefault(d, []).append(name)
+        print(f"已注册采集器 ({len(all_classes)}):")
+        for domain in sorted(domain_map):
+            names = sorted(domain_map[domain])
+            print(f"  领域: {domain:15s} → {len(names)} 源 — {', '.join(names)}")
+        print()
+        print("用法: python -m intel.cli run -d <领域>")
+        print("       python -m intel.cli list -d <领域>")
 
 
 def cmd_run(max_age: int = 7, fmt: str = "json", use_llm: bool = False,
-            config_path: str = None, output_dir: str = None):
+            config_path: str = None, output_dir: str = None, domains: str = None):
     """全流程：采集 → 分类 → 输出报告"""
 
     # 1. 加载配置
     config = _load_config(config_path)
-    collectors = instantiate_collectors(config)
+    collectors = instantiate_collectors(config, domains=domains)
 
     if not collectors:
         logger.error("无可用采集器，退出")
@@ -138,7 +154,9 @@ def main():
     parser = argparse.ArgumentParser(description="BriefNexus 情报采集框架")
     sub = parser.add_subparsers(dest="command", help="子命令")
 
-    p_run = sub.add_parser("run", help="全流程：采集 → 分类 → 输出")
+    p_run = sub.add_parser("run", help="采集指定领域的数据")
+    p_run.add_argument("-d", "--domain", required=True,
+                       help="领域: finance / self_driving / semiconductor (支持逗号组合)")
     p_run.add_argument("--max-age", type=int, default=7, help="采集近 N 天数据（默认 7）")
     p_run.add_argument("--format", choices=["json", "md"], default="json",
                        help="输出格式（默认 json）")
@@ -147,6 +165,7 @@ def main():
     p_run.add_argument("--output", help="输出目录")
 
     p_list = sub.add_parser("list", help="列出已注册采集器")
+    p_list.add_argument("-d", "--domain", help="按领域筛选")
 
     args = parser.parse_args()
     if args.command is None:
@@ -161,7 +180,7 @@ def main():
     )
 
     if args.command == "list":
-        cmd_list()
+        cmd_list(domains=args.domain)
     elif args.command == "run":
         cmd_run(
             max_age=args.max_age,
@@ -169,6 +188,7 @@ def main():
             use_llm=args.llm,
             config_path=args.config,
             output_dir=args.output,
+            domains=args.domain,
         )
 
 

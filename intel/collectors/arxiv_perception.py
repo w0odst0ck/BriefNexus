@@ -17,7 +17,7 @@ from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.arxiv_perception")
 
-ARXIV_API = "http://export.arxiv.org/api/query"
+ARXIV_API = "https://export.arxiv.org/api/query"
 
 # 追踪的关键词组合（按优先级排序）
 SEARCH_QUERIES = [
@@ -37,6 +37,7 @@ SEARCH_QUERIES = [
 @register("arxiv_perception")
 class ArxivPerceptionCollector(BaseCollector):
     source_name = "arxiv_perception"
+    domains = ["self_driving"]
     display_name = "arXiv (感知+光照)"
 
     def crawl(self, sess) -> List[NewsItem]:

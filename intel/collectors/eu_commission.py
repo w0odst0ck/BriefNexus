@@ -16,6 +16,7 @@ EU_RSS = "https://ec.europa.eu/commission/presscorner/api/rss?type=IP"
 @register("eu_commission")
 class EUCommissionCollector(BaseCollector):
     source_name = "eu_commission"
+    domains = ["finance", "self_driving", "semiconductor"]
     display_name = "EU Commission"
 
     def crawl(self, sess) -> List[NewsItem]:

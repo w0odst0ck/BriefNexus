@@ -9,3 +9,5 @@ from . import federal_reserve
 from . import eastmoney
 from . import cninfo
 from . import pbc
+from . import arxiv_perception
+from . import adas_vehicle_intl

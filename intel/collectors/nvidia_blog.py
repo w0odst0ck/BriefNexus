@@ -16,6 +16,7 @@ NVIDIA_RSS = "https://blogs.nvidia.com/feed/"
 @register("nvidia_blog")
 class NvidiaBlogCollector(BaseCollector):
     source_name = "nvidia_blog"
+    domains = ["semiconductor"]
     display_name = "NVIDIA Blog"
 
     def crawl(self, sess) -> List[NewsItem]:

@@ -18,6 +18,7 @@ GN_TOPIC_RSS = "https://www.globenewswire.com/RssFeed/subjectcode/13-Software/fe
 @register("globenewswire")
 class GlobeNewswireCollector(BaseCollector):
     source_name = "globenewswire"
+    domains = ["finance", "semiconductor"]
     display_name = "GlobeNewswire"
 
     def crawl(self, sess) -> List[NewsItem]:
