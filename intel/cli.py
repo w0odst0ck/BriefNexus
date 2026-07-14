@@ -24,6 +24,7 @@ from scripts._dotenv import load_project_env; load_project_env()
 
 from intel.core.base import NewsItem, CST
 from intel.core.registry import register, get_collector_classes, instantiate_collectors
+from intel.core.dedup import DedupStore
 from intel.pipeline.classifier import classify
 from intel.pipeline.reporter import build_report
 
@@ -108,25 +109,31 @@ def cmd_run(max_age: int = 7, fmt: str = "json", use_llm: bool = False,
     # 2. 采集
     sess = _sess()
     all_items = []
-    seen = set()
+
+    # 持久化去重
+    dedup = DedupStore()
+    today = datetime.now(CST).strftime("%Y-%m-%d")
 
     for collector in collectors:
         logger.info("[%s] 采集...", collector.display_name)
         try:
             items = collector.crawl(sess)
-            # 去重
+            # 跨天去重（标题 MD5）
+            new_titles = dedup.filter_new([it.title for it in items])
+            seen_titles = set()
             for it in items:
-                import hashlib
-                dk = hashlib.md5(it.title.encode()).hexdigest()
-                if dk not in seen:
-                    seen.add(dk)
+                if it.title not in seen_titles and it.title in new_titles:
+                    seen_titles.add(it.title)
                     all_items.append(it)
-            logger.info("  → %d 条", len(items))
+            logger.info("  → %d 条（跨天去重后）", len(items))
         except Exception as e:
             logger.error("  [FAIL] %s: %s", collector.display_name, e)
         time.sleep(random.uniform(0.5, 1.5))
 
-    logger.info("采集完成: %d 条（去重后）", len(all_items))
+    # 标记本次采集的标题到持久化存储
+    dedup.mark_seen_batch([it.title for it in all_items], today)
+    dedup.save()
+    logger.info("采集完成: %d 条（跨天去重后）", len(all_items))
 
     # 3. 分类
     classify(all_items)
@@ -136,18 +143,32 @@ def cmd_run(max_age: int = 7, fmt: str = "json", use_llm: bool = False,
     if output_dir is None:
         output_dir = os.path.join(PROJECT_ROOT, "intel", "output")
 
-    # JSON 报告（主输出）
-    json_path = os.path.join(output_dir, f"report_{datetime.now(CST).strftime('%Y-%m-%d')}.json")
+    # 归档输出（按日期分目录，含时间戳，永不覆盖）
+    ts = datetime.now(CST).strftime("%Y%m%d_%H%M%S")
+    archive_dir = os.path.join(output_dir, "archive", today)
+    os.makedirs(archive_dir, exist_ok=True)
+    archive_path = os.path.join(archive_dir, f"{ts}.json")
+    archive_content = build_report(all_items, fmt="json")  # 不传 output_dir → 返回字符串
+    with open(archive_path, "w", encoding="utf-8") as f:
+        f.write(archive_content)
+    logger.info("归档: %s", archive_path)
+
+    # JSON 报告（最新快照，覆盖）
+    json_path = os.path.join(output_dir, f"report_{today}.json")
     build_report(all_items, fmt="json", output_dir=output_dir)
-    logger.info("JSON 报告: %s", json_path)
+    logger.info("最新快照: %s", json_path)
 
     # MD 报告（附带）
     if fmt == "md":
-        md_path = os.path.join(output_dir, f"report_{datetime.now(CST).strftime('%Y-%m-%d')}.md")
+        md_path = os.path.join(output_dir, f"report_{today}.md")
         build_report(all_items, fmt="md", output_dir=output_dir)
         logger.info("MD 报告: %s", md_path)
 
-    print(f"\n>>> 完成: {len(all_items)} 条 | JSON: {json_path}")
+    # 去重存储清理
+    dedup.cleanup()
+    dedup.save()
+
+    print(f"\n>>> 完成: {len(all_items)} 条 | JSON: {json_path} | 归档: {archive_path}")
 
 
 def main():
