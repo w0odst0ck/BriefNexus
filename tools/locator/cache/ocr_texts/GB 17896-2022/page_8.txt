@@ -1,0 +1,40 @@
+GB 17896一2022
+Table 1一Energy efficiency grades of electronic ballasts for tubular fluorescent lamps (continued)
+Efficiency
+Lamp Data
+%
+Nominal                            Rated
+Lamp types and diagrams       power               ILCOS               power | Grade 1| Grade 2 | Grade 3
+W                               W
+FSS-10-E-GR10q
+86.4    82.6    70.4
+FSS-10-LVP/H-GR10q
+FSS-16-E-GR10q
+FSS-16-LGR8                        87.0 | 83.3 | 75.0
+FSS-16-L/P/H-GR10q
+FSS-21-E-GR10q
+TC-DD/VDDE       |国国|         21 | FSs-21-LGR10q                      89.7 | 867 | 78.0
+|国|               FSS-21-L/P/H-GR10q
+二
+FSS-28-E-GR10q
+28 “| FSS-28-l-GR8，                 24.5           86.0 | 80.3
+FSS-28-L/P/L-GR10q
+FSS-38-E-GR10q
+38                                     92.0    89.6    85.2
+FSS-38-LV/P/L-GR10q
+FSD-5-|-G23
+72.7 | 66.7 | 58.8
+FSD-5-E-2G7
+FSD-7-|-G23
+7                                      77.6 | 72.2
+FSD-7-E-2G7
+Tc      可三一一]
+FSD-9-|-G23
+78.0 | 72.7 | 66.7
+FSD-9-E-2G7
+FSD-11-|-G23
+11                               11            78.6 | 73.3
+FSD-11-E-2G7
+T5      sd 二让
+T2       和工-一一
+1

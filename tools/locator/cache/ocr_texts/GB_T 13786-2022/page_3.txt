@@ -1,0 +1,28 @@
+GB/T 13786一2022
+Foreword
+SAC/TC 513 is in charge of this English translation. In case of any doubt about the contents of Eng-
+lish translation，the Chinese original shall be considered authoritative.
+This document is drafted in accordance with the rules given in the GB/T 1. 1一2020 Directives for
+standaradlization一Part 1: Rules for the structure and drafting of stanaaradizing documents .
+This document replaces the GB/T 13786一1992 Artificial daylighting Mumination for cotton classing
+rooms in whole. In addition to a number of structural adjustments and editorial changes， the follow-
+ing technical deviations have been made with respect to GB/T 13786一1992(the previous edition ) :
+a) The “Content and Scope”has been changed to“Scope”，and some content has been changed
+(see Clause 1，Clause 1 of 1992 edition) ;
+b) The “Terms”has been changed to "Terms and Definitions”, and some content has been changed
+(see Clause 3，Clause 3 of 1992 edition) ;
+c) The content of ilumination quality has been changed (see Clause 4， Clause 4 of 1992 edition) ;
+d) The “lluminance”has been changed to“lluminance Intensity”，the index of luminance uni-
+formity has been added, and some content has been changed (see Clause 5，Clause 5 of 1992
+edition);
+e) The content of ilumination conditions has been changed (see Clause 6，Clause 6 of 1992 edi-
+tion);
+和The “Installation Method”has been changed to“Technical Requirements and Installation Method
+of Lighting Unit”, and some content has been changed (see Clause 7,， Clause 7 of 1992 edition) ;
+g) The environment color has been changed (see Clause 8，Clause 8 of 1992 edition) ;
+h) The maintenance of ilumination equipment has been changed (see Clause 9，Clause 9 of 1992
+edition);
+iD The annex“The llumination colors Ouality Characteristics for Cotton Classing”has been
+changed,， and is clearly defined as a normative annex (see Annex A, Annex A of 1992 edition) ;
+j) The annex “Installation of ilumination lights”has been deleted (see Annex B of 1992 edition).
+I

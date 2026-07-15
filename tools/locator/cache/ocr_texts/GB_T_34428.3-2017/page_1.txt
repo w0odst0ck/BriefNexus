@@ -1,0 +1,13 @@
+ICS 93.080.30
+[二      下 许
+中华人氏共和国国家标准
+GB/I 34428.3一2017
+齐 ;          大控设施误信规程
+高速公路监控设施通信规程
+-一一                  一    一一
+第 3 部分:LED 可变信息标志
+Comimunication rules of the devices of Surveillance and control system
+for expressway一Part 3:LED chancgeable Imessage Sign
+2017-09-29 发布                                       2018-04-01 实施
+中华人民共和国国家质量监督检验检疫总局 和 。
+中 国困冢标准化管理委员会

@@ -1,0 +1,43 @@
+G3 5337一85
+4.1.2.2.1 断电臂 contact breaker arm
+4.1.2.3 分电器盖 ”distributor cap
+由高绝缘性能材料制成的带有高压插座的盖子。
+4.1.2.4 分火头 distrihbutor rotor
+由高绝缘性能材料制成的把点火线图产生的高压电分配给分电器盖上电极的转子。
+被代替的同义词，打火头，转子，分火芯。
+4.1.2.5 离心提前机构 centrifugal advance mechanism
+利用离心力原理，根据发动机转速自动地改变点火时间的机构。
+4.1.2.6 真空提前机构 vacuum advance mechanism
+根据发动机负荷自动地改变点火时间的机构。
+4.1.2.7 触点间隙”pcint gap
+断电臂项块位于凸轮最高位置时触点之间的距离。
+被代替的同义词，白会间隙。
+4.1.3 高压阻尼线 anti- interference ignition cable
+具有折制火花对无线电王扰能力的带有高阻抗的高压导线。
+4.1.4 阻尼电骨suppressor resistor
+具有抑制火花对无线申干扰能力的电阻。
+4.2 半导体点火系统 (电子点火系统) semi - conductor ignition system， electronic ignition
+system，solid state ignition system
+利用半导体器件作开关的点火系统。
+被代替的同义词，晶体点火系统。
+4.3 电感点火系统 inductive ignition system
+4.4 电容放电点火系统 capacitor discharge ignition system
+4.5 半导体辅助点火系统 semi- conductor assisted ignition system
+应用断电触点的半导体点火系统。
+4.6 无触点点火系统 breakerless ignition system
+4.6.1 定时转子 timer rotor
+在无触点点火系统中，分电器轴上带有凸起 〈或齿形) 的转子。
+4.7 无分电器点火系统 distributorless ignition system
+一种不用旋转高讨分电器的点火系统。
+4.8 ”次级有效电压。 secondary available voltage
+在规定的条件下，在火花塞连接处可以利用的最小电压。
+4.8 ”火花塞需要电压“reauired spark plug voltage
+在规定的条件下，火花塞电极间隙跳火时必须加在火花塞接线柱上的最大电压。
+4.10 点火电压储备 ignition voltage reserve
+在规定的条件下，次级有效电压与火花塞需要电压之差。
+4.11 ”次级输出电压secondary output voltage
+在规定的条件下，高压电源输出端可利用的电压。
+4.12 ”火花申压“spark voltage
+在规定肯间火花间隙两端所测得的电压。
+4.18 火花电流 ”Spark current
+7

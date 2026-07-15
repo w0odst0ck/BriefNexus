@@ -1,0 +1,56 @@
+GB/ TI 20132一20197ISO 15370:2010
+船舶和海上技术 ”客船低位照明 布置
+1 范围
+
+本标准规定了按{国际海上人命安全公约》(SOLAS 1974)2000 年修正案第-2 竟的 13.3.2.5.1,以
+及国际海事组织(IMO交国际消防安全系统规则)所和定义的低位照明系统的认可 .安装和维修要求 。
+
+2 规苑性引用文件
+
+下列文件对于本文件的应用是必不可少的。 凡是注日期的引用文件,仅注日期的版本适用于本文
+件. 凡是不注日期的引用文件:其最新版本(包括所有的修改单)适用于本文件，
+
+ISO 3864-1:2002 图形侍号 安全包和安全标志 第1部分:安全标意和安全标记的证计原则
+(Graphical syvmbols一Safety colours and safety sligns一Part 1] ，Designm principjes for safety signs in
+workplaces and public areas)
+
+ISO 16069:2004 图形符号 安全标志 安全路径指示系统[Graphical symbols一Safety signs
+Safety way guidance systems (SWGS) |
+
+IEC 60092-101 船舶电气装置 第101 部分:定义和一般规年(Elecetrical installations in ships
+Part 101 :Definitions and general requlrements)
+
+IEC 60529 外元防护等级(IP 代码)| Degrees of protection PITOvided by enclosures (IJP Codey) |
+
+IEC 60598-2-22 灯具 第2-22部分:特殊要求 应总照明灯具(Luminaires一Part 2-22:
+Particular requlrements一Luminalres {or emergency lighting )
+
+IEC 60945 全球海上届险与安全系统(GMDSS) 船用无线电设香和海上导航设前通用要求测试
+方法和要求的副试荣果| Marine navigation and radiocommunication equipment and syvstems一(Teneral
+requirements一Methods of testing and required test results |
+
+国际海上人人辣安全公约(SOLAS 1974),2000 年修正和案|IMO International Convention for the
+Safety of Life at Sea，1974 (SOLAS 1974)，as amended in 2000 |
+3 术语和定义
+
+下 列术语和定义适用于本文件。
+
+了. ]
+
+认可 approval
+
+由主管机关颂布对产品及其船上布置的正式验收。
+3.2
+
+集合站  assemibly station
+
+明确指定用于集合乘客的内部或外部处所,用于聚集附近乘客并允许乘客随时登艇,除非在与登乘
+站相同的位置上,才能进入救生敌。
+
+3.3
+
+维修 maintenance
+
+所有用于居复和/或保存系统技术要素原始状态的措施,以及所有用于确定和评佑其现行状态的
+
+|

@@ -1,0 +1,29 @@
+GB 38450一2019
+Minimum allowable values of energy
+efficiency and energy efficiency
+grades of LED flat panel luminaires
+1 Scope
+This standard specifies the energy efficiency grades,， minimum allowable values of energy efficiency，
+and test methods of LED flat panelluminaires.
+This standard is applicable to LED flat panel luminaires using LED as light sources，with rated volt-
+age of AC 220 V, rated frequency of 50 Hz (including LED light sources and controlgears). The
+thickness of LED flat panel luminaire is not more than 85 mm without accounting its external con-
+trolgear (S).
+This standard is not applicable to LED flat panel Iluminaires with additional non-lighting power-
+consuming functions，or with dimming/color-tunable functions，or with colors/patterns/ decorations
+on the continuous luminous surfaces.
+2 Normative references
+The following referenced documents are indispensable for the application of this document， For
+dated references，only the edition cited applies. For undated references, the latest edition of the
+referenced document (Cincluding any amendments) applies.
+GB/T 24826，General jghting一Light emitting diode (LED) producis and related equipmen一Terms
+and definitions
+GB/T 31897.201, Luminaire performance一Part2-1: Particularreqguirements forLED /uminaires
+3 Terms and definitions
+For the purpose of this document, the terms and definitions given in GB/T 24826 and the following
+apply.
+3.1
+LED flat panel luminaire
+Thin Iluminaire using LED as light source that emit only downward light，which Iluminous surface is
+
+1

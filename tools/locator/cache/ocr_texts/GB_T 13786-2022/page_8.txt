@@ -1,0 +1,27 @@
+GB/T 13786一2022
+3.3
+color temperature
+the absolute temperature of the complete radiator when the color of the light source is the same as
+the color of the complete radiator at a certain temperature
+NOTE The unit is Kelvin (K).
+[source: GB/T 5698一2001, 4.88, modified]
+3.4
+correlated color temperature
+the absolute temperature of the complete radiator when the chromaticity point of a light source is
+not on the blackbody trajectory, the chromaticity of the light source is closest to the chromaticity of
+the complete radiator at a certain temperature，or the color difference distance on the uniform chro-
+maticity diagram is the smallest
+NOTE The unit is Kelvin (K).
+[source: GB/T 5698一2011, 4. 89,， modified]
+3.5
+color rendering index
+measurement of color rendering of light source
+NOTE The index is expressed by the consistency level of the color of the tested object under the light source and the
+color under the reference light source.
+[source: GB/T 5698一2001, 4.77, modified]
+3.6
+general color rendering index
+the average value of the light source”s special color rendering index for the eight colors specified by
+CIE
+[source: GB/T 5698一2001, 4.79]
+2

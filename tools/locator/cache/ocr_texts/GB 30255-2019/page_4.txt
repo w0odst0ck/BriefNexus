@@ -1,0 +1,27 @@
+GB 30255一2019
+quirements
+GB/T 29293 ,Measurement methods of the performance for LED downlights
+GB/T 29294, Performance requirements for LED downjights
+GB/T 29295, Test methoas of performance of sef ballastea LED reflector /amps
+GB/T 29296, Selfballastead LED reflector /amps一Performance requirements
+GB/T 31112, Classification of Non-directional Selfballasted LED-lamps for general 1ighting services
+3 Terms and definitions
+For the purpose of this document, the terms and definitions given in GB/T 24826, GB/T 24908. GB/
+T 29294, GB/T 29296 and GB/T 31112 and the following apply.
+3.1
+minimum allowable values of energy efficiency for LED downlights
+the minimum allowable value of Iuminous efficacy of the LED downlight under the specified
+testing conditions
+3.2
+minimium allowable vaules of energy efficiency for directional integrated LED lamps
+the minimum allowable value of Iluminous efficacy of the directional integrated LED lamp under the
+specified testing conditions
+3.3
+minimium allowable vaules of energy efficiency for non-directional self-ballasted LED lamps
+the minimum allowable value of Iluminous efficacy of the non-directional self-ballasted LED lamp
+under the specified testing conditions
+4 Technical requirements
+4.1 Energy efficiency grades
+4.1.1 The energy efficiency levels of LED products for indoor lighting are classified into three
+grades,，of which Grade 1 is the most efficient.
+2

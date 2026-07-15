@@ -1,0 +1,26 @@
+GB/T 39928一2021
+LED filament lamps一
+Performance redquirements
+1 Scope
+This standard specifies the terms and definitions，classification and nomenclature，technical require-
+ments, test methods and inspection rules of non-directional integrated LED filament lamps for gener-
+al lighting.
+This standard is applicable to the non-directional integrated LED filament lamp with integral means
+for stable operation components，intended for domestic and similar general lighting purposes. The
+application scope is as follows:
+一rated power is not more than 60 W:
+一rated voltage AC220 V, frequency 50 Hz;
+一adopt screw type lamp cap conforming to GB/T 1406.1 or bayonet type lamp cap conforming to
+
+GB/T 1406.5;
+一the bulb shapes are pear A55，A60，PS60 ，A75.
+NOTE “Lamp” in this standard represents "non-directional integrated LED filament lamp"”，unless otherwise specified.
+2 Normative references
+The following referenced documents are indispensable for the application of this document . For da-
+ted references，only the edition cited applies. For undated references，the latest edition (Cincluding
+any amendments) applies.
+GB/T 1406.1， Types and dimensions of lamp caps一Part 1:Screw caps
+GB/T 1406.5, Types and dimensions of /lamp caps一Part 5: Bayonet caps
+GB/T 1483.1, Gauges for /amp caps and holders一Part 1: Gauges for screw caps and holaers
+GB/T 1483.5, Gauges for caps and lampholders一Part 5: Gauges for bayonet caps and lampholaers
+1

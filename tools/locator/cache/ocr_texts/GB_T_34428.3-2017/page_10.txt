@@ -1,0 +1,33 @@
+CBAT 34428.3一2017
+表 4 基本单元定义
+和号| 3称 | tk度9 诅
+显示内容的起始(左上和角)举标 .单位为点,xxx.yyy 分别为横坐
+2           VCXXXYYY                         标和纵坐标 ,用三位表示 ,不足三位前面补0。LED 可变信息标
+志的左上和角为原点,坐标值为(0,0) ,缺省值为原点
+字符颜色,Net 为透明色 ,RRR.GGG.BBB .YYY 分别表示 LED 可
+3     VcRRRGGGBBBYYY        14        变依息标志红.绿.蓝.琉弄色像隶符的弃座,范围为0一255,用
+三位表示 ,不足三位前面补0,缺省为ez255255000000(即黄色 )
+ViRRRecGRaByyYy        字符背景颜色,bt 为透明色,RRR.GGG.BBB.YYY 的含义同
+上 ,缺省为Ybt
+5            NSXX               |         玫间距 ,单位为点,用二位表示 ,不足二位前面补0,缺省值为0
+表示字体.nm 为字体名称,取值为sf.h 和ks表示宋体.[ 表示
+下            \FEnhhww               7          仿宋体,h 表示黑体,上 表示楷体:hh 为字体商放.ww 为字体视
+              \B           把存依器中编号为 nnn 的图形文件显示到\Oxxxyyy 所指定的
+        和坐标,编号用三位表示,不足三位前方补0
+4.3.2 显示存储信息指令
+4.3.2.1 指令用途
+本指令用于显示储存在可变信息标识存储器中的某一信息文件。
+4.3.2.2 ASCII 码组编码
+显示存储信息指令的 ASCII 码组正文编码格式见表 5。
+表5 显示存储信息指令一ASCII 码组正文编码格式
+1 | 存储信息编号             1                  存储器中的信息文件编号
+4.3.2.3 XML 编码
+XML 编码的显示存储信息指令正文如下，
+《XS:eLement name一“TEXT”)
+《XSICOmpD1LexTVPe，
+MXS: Sequence)
+《XS:element name一 DisplayNo ”type一 xs:unsignedByte /)
+《1XS Sequence)
+( /xs ;ComplexTypey》
+《1 XS，已] ement )
+4

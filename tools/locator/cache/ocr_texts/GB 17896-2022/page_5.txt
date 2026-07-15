@@ -1,0 +1,30 @@
+GB 17896一2022
+Minimum allowable values of energy
+efficiency and energy efficiency grades
+of ballasts for gas discharge lamps for
+general lighting
+1 Scope
+This document specifies the energy efficiency grades, minimum allowable values of energy efficien-
+cy, and test methods of ballasts for tubular fluorescent lamps，single-capped fluorescent induction
+lamps，metal-halide lamps and high-pressure sodium lamps.
+This document is applicable to electromagnetic and electronic ballasts for tubular fluorescent lamps
+with nominal wattage of 4 W-120 W (inclusive) ,electronic ballasts for single-capped fluorescent in-
+duction lamps (externally coupled) with rated wattage of 30 W-400 W (inclusive) ，electromagnetic
+and electronic ballasts for metal-halide lamps with nominal wattage of 20 W-1 500 W (inclusive) and
+electromagnetic ballasts for high-pressure sodium lamps with nominal wattage of 70 W-1 000 W (in-
+clusive),，all with rated voltage of AC 220V,， rated frequency of 50 Hz.
+This document is not applicable to electronic ballasts for tubular fluorescent lamps having non-pre-
+heated cathodes, and ballasts as part of an integrated lamp and cannot be dismantled.
+2 Normative references
+The contents in the following documents constitute the essential clauses of this document through
+normative references in the text. For dated references，only the edition cited applies. For undated
+references，the latest edition of the referenced document (including any amendments) applies.
+GB/T 32483. 1， Energy performance of lamp controlgear一Part 1: Controlgear for fluorescent
+lamps一Method of measurement to determine the total input power of controlgear circuits and the
+efficiency of the controlgear
+GB/T 32483.2, Energy performance of /lamp controlgear一Part 2: Controlgear for high intensity dis-
+charge Iamps (excluding fluorescent Iamps )一Method of measurement to determine the efficiency
+of controlgear
+GB/T 34841, Fluorescent induction lamps一Performance specification
+
+1

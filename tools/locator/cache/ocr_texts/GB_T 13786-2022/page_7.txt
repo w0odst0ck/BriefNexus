@@ -1,0 +1,25 @@
+GB/T 13786一2022
+Artificial daylighting illumination for
+cotton classing rooms
+1 Scope
+This document specifies the technical requirements of ilumination quality，lighting intensity，ilumi-
+nation conditions，ilumination unit as well as installation mode，environmental color，maintenance
+of iumination equipment，and other technical requirements of artificial daylighting for cotton class-
+ing rooms.
+This document is applicable to cotton classing rooms.
+2 Normative references
+The document has no normative references.
+3 Terms and definitions
+For the purposes of this document，the following terms and definitions apply.
+3.1
+spectral power distribution
+the function between spectral intensity and wavelength
+[source: GB/T 5698一2001, 3.3, modified]
+3.2
+CIE standard illuminates
+a Specific relative spectral power distribution incident on an object specified by the International
+Council on INIumination (CIE).
+NOTE Standard iluminates Dxs (approximately 7 504 K correlated color temperature of daylight)
+[source: GB/T 5698一2001, 4. 85, modified]
+
+1

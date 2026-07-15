@@ -1,0 +1,28 @@
+GB 38450一2019
+4.4 Lumen maintenance
+The Ilumen maintenance factor at 3 000 h of LED flat panel luminaires shall not be less than the re-
+quired value of Iumen maintenance factor related to rated lifetime.， The required value of Ilumen
+maintenance factor shall be calculated by Formula (1).
+ao
+
+LM =(70%) “                                                          (1)
+where
+
+LM isthe Ilumen maintenance factor;
+
+加     is the rated lifetime,， expressed in hour (h).
+5 Test methods
+5.1 Luminous efficacy，correlated colortemperature and color rendering index
+Luminous efficacy，correlated color temperature and color rendering index of LED flat panel lumi-
+naires shall be tested in accordance with test methods specified in GB/T 31897. 201.
+5.2 Lumen maintenance
+The applicable test methods for Ilumen maintenance are determined based on whether LED flat
+panel luminaires adoptLED packages with LM-80 test reports.
+Whenthe LED flat panelluminaire adopts the LED packages with LM-80 test reports and the corre-
+sponding parameters listed in the reports are verified compliance by testing and calculation ，then
+3 000 hlumen maintenance factor in the LM-80 test reports can be accepted as the Ilumen mainte-
+nance factor at 3 000 h for the LED flat panel luminaire. When LED package's tested values are
+verified to be non-compliant，or LM-80 test reports of the LED packages are not available， lumen
+maintenance shall be tested in accordance with the test methods specified in GB/T 31897. 201.
+
+3

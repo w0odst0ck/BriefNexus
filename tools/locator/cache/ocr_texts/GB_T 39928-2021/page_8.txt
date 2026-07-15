@@ -1,0 +1,29 @@
+GB/T 39928一2021
+GB/T 2828.1, Sampling procedures for inspection by attributes一Part 1: Sampling schemes indexedl
+by acceptance quality Jimit (AOL) for /Jot-by-lot inspection
+GB/T 2829, Sampling procedures and tables for periodlic inspection by attributes (Apply to inspec-
+tion of process Stability)
+GB/T 2900.65一2004, Electrotechnical terminology一Lighting
+GB/T 7249, Maximum lamp outlines for incandescent Jamps
+GB/T 10681, Tungsten filament /lamps for domestic and similar general Jighting purposes一Perform-
+ance requirements
+GB/T 10682一2010, Double-capped fluorescent Jamps一Performance specifications
+GB 17625.1, Electromagnetic compatibiiity一Limits一Limits for harmonic current emissions (equip-
+ment input current 近16 A per phase)
+GB/T 17743, Limits and methods of measurement of radio disturbance characteristics of electrical
+Jighting and similar eqguipment
+GB/T 18595, Equipment for general 1ighting purposes一EMC immunity requirements
+GB/T 24823一2017,LED modules for general lighting一Performance requirements
+GB/T 24824,.Measurement methods of LED modules for general Jighting
+GB/T 24826一2016, General lighting一Light emitting diode (LED) products and related equipment一
+Terms and definitions
+GB 24906, Selfballasted LED-lamps for general lighting services by voltage 二50 V一Safety specifi-
+cations
+GB/VT 31112, Classification of Non-directional Selfballasted LED-lamps for general lighting services
+GB/Z 39942一2021, Application of GB/T 20145 for the assessment of blue light hazard to light
+Sources and Iluminaires
+3 Terms and definitions
+For the purposes of this document', the terms and definitions given in GB/T 2900. 65一2004，
+GB/T 24826一2016 and GB/T 31112 apply.
+
+2

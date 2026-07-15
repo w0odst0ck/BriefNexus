@@ -1,0 +1,27 @@
+GB 17896一2022
+3 Terms and definitions
+For the purpose of this document，the terms and definitions given in GB/T 32483.1,GB/T 32483.2
+and the following apply.
+3.1
+ballast efficiency
+7b
+ratio of the output power to the lamp(s) and the total input power of the ballast-lamp circuit
+NOTE ”Loads from sensors, network connections and other auxiliary are disconnected or, if not possible,otherwise,， e-
+liminated from the result.
+3.2
+minimum allowable value of energy efficiency for ballast
+the minimum allowable value of ballast efficiency under the specified testing conditions
+3.3
+standby power
+average power consumption of a ballast in the standby mode
+NOTE 1 Standby mode of ballast is a mode when the ballast is connected to a supply voltage with the ilumination func-
+tion of，while capable of being activated by an external trigger not being a trigger from a network.
+NOTE 2 ”Examples of external triggers are sensing or timing.
+4 Technical requirements
+4.1 Energy efficiency grades
+4.1.1 The energy efficiency levels of ballasts are classified into three grades,， of which Grade 1 is
+the most efficient.
+4.1.2 The efficiency of electronic ballasts for tubular fluorescent lamps of each grade shall not be
+less than respective values specified in Table 1, and the efficiency of electromagnetic ballasts for tu-
+bular fluorescent lamps of each grade shall not be less than respective values specified in Table 2.
+2

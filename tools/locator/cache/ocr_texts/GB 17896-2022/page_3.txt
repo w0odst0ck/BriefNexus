@@ -1,0 +1,51 @@
+GB 17896一2022
+
+Foreword
+
+SAC/TC 20 is in charge of this English translation. In case of any doubt about the contents of English
+
+translation ，the Chinese original shall be considered authoritative.
+
+This document is drafted in accordance with the rules given in the GB/T 1.1一2020 Directives for
+
+standardlization一Part 1: Rules for the structure and drafting of standardizing documents.
+
+This document replaces GB 17896一2012 Minimum allowable values of energy efficiency and energy
+
+efficiency grades of ballasts for tubular forescent /amps ,GB 19574一2004 Limited values of energy
+
+efficiency and evaluating values of energy conservation of ballast for high-pressure sodium lamps，
+
+GB 20053一2015 Minimum allowable values of energy efficiency and energy efficiency grades for bal-
+
+lasts of metar-haliae /amps ,GB 29143一2012 Minimum allowable values of energy efficiency and en-
+
+ergy efficiency graaes of ballasts for electrodeless fuorescent lamps in whole.In addition to structur-
+al adjustment and editorial changes，the following technical deviations have been made with respect
+to the GB 17896一2012, GB 19574一2004, GB 20053一2015， GB 29143一2012 :
+
+a) Deleted terms and definitions of“evaluating values of energy conservation for ballasts”.“effi-
+cacy factor of ballast for high pressure sodium lamp”,“limited values of energy efficiency of
+ballast for high pressure sodium lamp”,“evaluating values of energy conservation of ballast for
+high pressure sodium lamp”and “target limited values of energy efficiency of ballast for high
+pressure sodium lamp”(See 3.3 of GB 17896一2012，Clause 3 of GB 19574一2004， 3.2 of
+GB 20053一2015, 3.3 of GB 29143一2012) ;
+
+b) Revised term and definition of“standby power”(See 3.3. 3.4 of GB 17896一2012. 3.3 of
+GB 20053一2015, 3.4 of GB 29143一2012)
+
+c) Deleted “Basic requirements”(See Clause 4 of GB 17896一2012. 4.1 of GB 19574一2004, 4.1 of
+GB 20053一2015，Clause 4 of GB 29143一2012)
+
+d) Deleted requirement on total input power of ballast-lamp circuit of dimmable ballasts for tubular
+fluorescent lamp at the dimming position corresponding to 25% of the Ilumen output of the oper-
+ated lamp(See 5.2.3 and 5.3.2 of GB 17896一2012) ;
+
+e) Added efficiency requirements of ballasts for high-pressure sodium lamps(CSee 4.1.5);
+
+和 Deleted "Requirement on evaluating values of energy conservation”(See 5.4 of GB 17896一2012 .
+4.3 of GB 19574一2004, 4.4 of GB 20053一2015,， 5.4 of GB 29143一2012)
+
+g) Deleted requirement on standby power grades of ballasts for single-capped fluorescent induction
+
+亚

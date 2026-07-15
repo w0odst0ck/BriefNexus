@@ -1,0 +1,38 @@
+GB 17896一2022
+Table 1一Energy efficiency grades of electronic ballasts for tubular fluorescent lamps
+Efficiency
+Lamp Data
+%
+Nominal                                      Rated
+Lamp types and diagrams        power                 ILCOS                 power | Grade 1| Grade 2 | Grade 3
+W                                           W
+[asssam ea ae
+| ms
+[aasssanm | ao as an
+[ae
+[seo
+医玫[ER开避IEIEZ
+FSO-10-E-G24q= 1
+89.4     86.4     73.1
+FSO-10-l-G24d=1
+FSO-13-E-G24q= 1
+13                                          12.5     91.7     89.3     78.1
+FSO-13-|-G24d=1
+TC-D/DE
+FSO-18-E-G24q= 2
+16.5     89.8     86.8     78.6
+FSO-18-|-G24d= 2
+FSO-26-E-G24q= 3
+26                                           24                88.9     82.8
+二上且国                  FSO-26-1-G24d= 3
+FSM-13-E-GX24q=1
+13                                          12.5     91.7     89.3     78.1
+FSM-13-LGX24d=1
+TC-T/TE
+FSM-18-E-GX24q= 2
+18                                                   89.8     86.8     78.6
+FSM-18-L-GX24d= 2
+FSM-26-E-GX24q= 3
+TC-T/TC-TE                            26                                           24                88.9     82.8
+FSM-26-|-GX24d= 3
+3

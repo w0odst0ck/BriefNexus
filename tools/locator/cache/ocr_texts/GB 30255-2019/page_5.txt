@@ -1,0 +1,31 @@
+GB 30255一2019
+4.1.2 The Iuminous efficacy of LED downlights of each grade shall not be less than respective
+values specified in Table 1.
+Table 1一Energy efficiency grades of LED downlights
+Rated            Rated correlated color                            Luminous efficacy
+ated power
+W          temperature(CCT)                               Im/W
+K                         Grade 1                   Grade 2                    Grade 3
+[EEC RE JRJ了
+三5
+aa
+4.1.3 The Iuminous efficacy of directional integrated LED lamps of each grade shall not be less than
+respective values specified in Table 2.
+Table 2一Energy efficiency grades of directional integrated LED lamps
+Rated correlated color                              Luminous efficacy
+Lamp type            temperature(CCT)                                                    Im/W
+PAR16/PAR20
+[和本生生
+PAR30/PAR38
+[sm
+4.1.4 The Iluminous efficacy of non-directional self-ballasted LED lamps of each grade shall not be
+less than respective values specified in Table 3.
+Table 3一Energy efficiency grades of non-directional self-ballasted LED lamps
+Rated correlated color                           Luminous efficacy
+Light distribution
+temperature(CCT)                            Im/W
+Type
+Ful-distribution
+Semrdstrbuton/          ccT<sam              0
+4.1.5 For LED products for indoor lighting with a color rendering index (CRI) 三90， the specified
+3

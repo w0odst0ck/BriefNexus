@@ -1,0 +1,41 @@
+GB/T 10681一2009
+家庭和类似场合普通照明用钨丝灯
+性能要求
+1 范围
+
+本标准规定了家庭和类似场合普通照明用钨丝灯(以下简称灯)的性能要求 .测试方法、合格判定方
+法以及与制造商成品测试记录相关的对全部产品评定的方法。本标准的评定方法可用于认证。本标准
+对批次产品的测试程序适用于对特定批次的评定但不能用于认证。
+
+本标准适用于符合 GB 14196. 1一2008 的普通照明用钨丝白炽灯,其类型包括;
+
+-额定功率:15 W一200 W(含 200 W);
+-额定电压:220 V 和230 Vi
+一一A 型或 PS 型玻壳;
+-透明 磨砂.类似于磨砂效果的涂层或内涂白玻壳;
+-B22d,E27 灯头。
+本标准的第 9 章列出了具体的灯类型。
+2 规范性引用文件
+
+下列文件中的条款通过本标准的引用而成为本标准的条款。凡是注日期的引用文件,其随后所有
+的修改单(不包括勘误的内容)或修订版均不适用于本标准,然而,鼓励根据本标准达成协议的各方研究
+是否可使用这些文件的最新版本。凡是不注日期的引用文件,其最新版本适用于本标准。
+
+GB/T 1406,1 灯头的型式和尺寸 第 1 部分:螺口式灯头(GB/T 1406. 1一2008, IEC 60061-1:
+2005,Lamp caps and holders together with gauges {or the control of interchangeability and safety一
+Part 1:Lamp caps,MOD)
+
+GB/T 1406.5 灯头的型式和尺寸 第 5 部分:卡口式灯头(GB/T 1406, 5一2008,IEC 60061-1:
+2005,Lamp caps and holders together with gauges for the control of interchangeability and safety一
+Part 1:Lamp caps,MOD)
+
+GB/T 1483. 1 灯头.灯座检验量规 第1部分:螺口式灯头`.灯座的量规(GB/T 1483. 1一2008，
+IEC 60061-3:2004,Lamp caps and holders together with gauges for the control of interchangeability
+and safety一Part 3:Gauges,MOD)
+
+GB/T 7249 白炽灯的最大外形尺寸(CGB/T 7249一2008,IEC 60630:2005,IDT)
+
+GB 14196. 1一2008 白炽灯安全要求 ”第 1 部分:家庭和类似场合普通照明用钨丝灯(IEC 60432-
+1:2005,1IDT)
+
+JEC 60887 灯泡的玻壳命名系统

@@ -1,0 +1,30 @@
+GCB/I 19510.207一2023
+目 次
+引| 理
+2 规范性引用文件 ooseeeeeosseseeneseeeseeseoseeeeeeeesoesieneseeoeseesioseeeitesesootesseoeeeseesiooeeeteeeeeteeeie ]
+3 术语和定名 ossasseeaasaeeaasaaaaaiaaaiiaaasaaaaaaaasdadaecsuaiasaasaaaaduuaauiiiaaaiiiddd seadddsasuuuaasuaiaaaiisaasiia 和
+4 一般要求
+5 ”试验一般要东 ee
+8和疮滋
+7 标志 ee
+9 接线端子 ooooseseoseeseeseeseseeeseeseesteseasessseeseeeesesseeeasstesessetrasttteeoatesetettetecessettesstteatateseas 了
+10 保护接地规定ooeeseseeeeonseeseeneeseeeeeseeseeseeeesseeeeeseeseseeceieseesiaseseetaeeseeseseseestseeeiateseatasesiel 末
+11 防潮与移娘和wooseeeaaseesesaaessnsasssstassetsaaseeeaaasteaaasesiatassataaasiataaaaiaaasseraaaseeaaasssiataaaaiaaasiat 下
+12 电气强麽.ee
+13 控制装置绕组的耐热坛验间ee
+15 启动状态，和ee
+17 电源电流。ooeoeeeeeseeseeeenseeseoneeseooeesoeseeseseeneecseoneeeeeeeceoesoesioeeseeeteosieeetoeeeeeteeeieeseoeteesie 各
+19 灯工作电流波形.和pp
+20 ”功能安全(EBLE,EOF、) ee
+21 转换功能 ee ]]
+办办  充电浅置 可]
+23 过放保扫 eeooee5oe90o9eeo seo9eeioe oo see soee
+24 指示英 oooeoooeoeeesoseersessesioeseseoeseeessoossesoosesiosseeooiereoieeceseseorsesoeeseeoeesesioeseosseeseoteecese ] 人
+25 远程控制.休目模式 .抑制模武 1
+26 温度循环试验和耐户性试验 ooooeeeeeeeseooseeseeseeeoseeseoseeeeeoeesreeeieseeeooseeseoeeeeeoeeeooeoeeoeeeeee 17
+27 楼性反间 oooosesseeeeoseseasseesaaaseeaaaseeaaaseeiasansaiaaasastaaasssaaasesiaawssaiasaaaaiwsaaiaaaaaadadsssaiases 人
+28 故障状态 pe 17
+29 针构 1
+30 惧电距离和电气间随 pe 8
+31 曙钉.载流部件和连接件:pe 18
+|

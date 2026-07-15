@@ -1,0 +1,64 @@
+GB/T 19510.207一2023
+
+注: GB/T 14044一2008 管形线光灯用镇流峰”性能要求(IEC 60921:2006,MOD)
+
+IEC 61558-1 电力变压锅.电源 .电抗着和类似产品的安全 第1部分:通用要求和试验(Safety of
+transformers，reactors，Dower suUpDply unlts and combinations thereof-一Part 1 ， (eneral requlrements
+and tests)
+
+注: GB/T 19212,1一2016 变压需.电扩器.电源装置及其组全的安全 第1部分:通用要求和试验(IEC 61558-1，
+
+2009 ,TD ，
+
+IEC 61558-2-1 电力变不天.电源.电抗钥和类似产品的安全 第2部分:一般用途分离变压艇和
+内和闭分离变不名的电源的特殊要求和试验(Safety of transformers，reactors，power supply units and
+combinations thereol一Part 2-1:，Particular requlrements and tests for separating transforrmers amd
+power supply units IncorpDporating separating transformers for general applications )
+
+注: GB/'T 19212.2一2012 电力变压化.电源.电抗闫和类似产品的安全 第2部分:一般用途分离变压器和内获
+
+分离变压天的电源的特殊要求和试验(IEC 61558-2-1:2007,IDT
+
+IEC 61558-2-6 电源电压为1 100 V 及以下的变压需 .电抗锅.电源到置和类似产品的安全 第 2-6
+部分:安全隔离变压上秀和内装安全隔讽变压希的电源妆置的特殊要求和试验(Safety of
+transformers，Treactors，DbDower supply units and combinations thereof一Part 2-6，Particular require-
+ments and tests for safety lsolating transformers and power supplv unlits Incorporating safety lsolating
+tramsformers for general applications )
+
+注, GB/了T 19212.7一2012 电源电压为1 100 V 及以下的变压器.电抗器.电源装置和类似产品的安全 第7部
+
+分:安全隔离变讨项和内冯安全隔离变讨此的电源装置的特殊要求和试验(IEC 61558-2-6:2009,IDT)
+
+IEC 61558-2-16 电源电压为1 100 V 及以下的变压带、.电抗器.电源装置和类似产品的安全 第
+2-16 部分:开关型电源芭置和开关型电源疹置用变压关的特风要求和试验(Safety of transformers，Fre-
+actors，power supply unlts and simillar produets for supply voltages up to 1 100 V一Part 2-16: Partl-
+cular requlrenments and tests for swlitch mode power supply unlits and transtormers for Switch mode
+power supply unitsy)
+
+注: GB/T 19212,.17一2019 电源电压为1 100 V 及以下的变压器.电抗器.电源装置和类似产品的安全 第17部
+
+分:开关型电源装置和开关型电源装置用变压器的特殊要求和试验(IEC 61558-2-16:2013 ,MOD)
+
+IEC 62034:2012 电池供电的应急茧散照明用月动测试系统(Automatic test systems for battery
+Powered emergency escape |LEhting )
+
+注: GB/T 26688一2011 电池供电的应急朴散照明目动试验系统(IEC 62034:2006,IDT)
+
+3 术语和定义
+
+GB/T 19510.1一2023 中第 3 章和 GB/T 7000.222一2023 中 22.3 界定的以及下述术语和定义适用
+
+于本文件。
+3. 1]
+
+应急照明 emergency lighting
+
+在正篆照明的电源发生故障时可人殿使用的照明。
+3.2
+
+转换功能 changeover 0peration
+
+当正稼照明电狐中断时将条目动连接到应征照明电源上,当正稼照明电慰慨复后将灯目动连接到
+正溃照明电源上。
+
+<

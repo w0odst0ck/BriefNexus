@@ -1,0 +1,44 @@
+GB 19044一2022
+
+Minimum allowable values of energy
+
+efficiency and energy efficiency grades
+
+of fluorescent lamps for general
+
+lighting
+
+1 Scope
+
+This document specifies the energy efficiency grades,minimum allowable values of energy efficien-
+
+cy,and test methods of fluorescent lamps for general lighting.
+
+This document is applicable to fluorescent lamps classified as types listed below :
+
+一Self-ballasted fluorescent lamps with rated wattage of 3 W - 60 W (inclusive) and self-ballasted
+fluorescent induction lamps with rated wattage of 10 W -60 W (inclusive) ,which integrate con-
+trol gear and all additional elements necessary for starting and stable operation of the light source，
+with Edison or bayonet cap,with rated voltage of AC 220 V,rated frequency of 50 Hz;
+
+一Lamps having preheated cathodes,designed for operation on AC main frequencies with the use of a
+starter,and additionally operating on high frequency, and lamps having preheated cathodes, de-
+signed for operating on high frequency (hereafter referred as double-capped fluorescent lamps) ;
+
+一Single-capped fluorescent lamps having preheated cathodes;
+
+一Single-capped fluorescent induction lamps with rated wattage of 30 W- 400 W (inclusive).
+
+This document is not applicable to self-ballasted fluorescent lamps with shades.
+
+2 Normative references
+
+The contents in the following documents constitute the essential clauses of this document through
+
+normative references in the text. For dated references, only the edition cited applies. For undated
+
+references ,the latest edition of the referenced document (including any amendments) applies.
+
+GB/T 10682, Double-capped fluorescent lamps一Performance specifications
+
+1

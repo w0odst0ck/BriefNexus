@@ -1,0 +1,26 @@
+GB 17896一2022
+Table 1一Energy efficiency grades of electronic ballasts for tubular fluorescent lamps (continued)
+Efficiency
+Lamp Data
+%
+Nominal                                      Rated
+Lamp types and diagrams       power               ILCOS               power | Grade 1| Grade 2 | Grade 3
+W                                           W
+TCTE                                            FSM6H-120-L/P-2G8=1
+120                                         122      92.6               84.7
+FSM8H-120-LV/P-2G8=1
+NOTE 1 Lamp rated power is that specified in relevant lamp data sheet of corresponding performance standard.
+NOTE 2 ”The efficiency of multi-lamp type ballasts of each grade is the same value specified in the table. The lamp
+power is calculated using the sum of the power of all lamps connected to the ballast.
+NOTE 3 The efficiency of dimmable electronic ballasts of each grade is measured at 100% Iumen output of the oper-
+ated lamp(s).
+Table 2一Energy efficiency grades of electromaganetic ballasts for tubular fluorescent lamps
+Efficiency
+Lamp Data
+9%
+Nominal                                      Rated
+Lamp types and diagrams       power               ILCOS               power | Grade 1| Grade 2 | Grade 3
+W                                           W
+[asesam |
+nm | 一一  Fa6EGI32671200             [二|二|
+6

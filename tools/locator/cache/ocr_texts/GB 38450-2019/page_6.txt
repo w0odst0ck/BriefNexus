@@ -1,0 +1,32 @@
+GB 38450一2019
+regular square,， rectangular，or circular continuous flat surface， and the ratio of its length to width
+is not greaterthan 5, and the length of the largest side or diameter is not less than 270 mm
+3.2
+luminous efficacy of LED flat panel luminaire
+Ratio of the initial luminous flux to the input power of LED flat panel Iluminaire under the specified
+testing conditions
+3.3
+minimium allowable vaules of energy efficiency for LED flat panelluminaire
+Minimum allowable value of Iluminous efficacy of LED flat panel Iluminaire under the specified test-
+ing conditions
+4 Technical requirements
+4.1 Energy efficiency grades
+The energy efficiency levels of LED flat panel luminaires are classified into three grades，of which
+Grade 1 is the most efficient， The Iluminous efficacy of LED flat panel luminaires of each grade
+shall not be less than respective values specified in Table 1.
+Table 1一Energy efficiency grades of LED flat panelluminaires
+Rated correlated color                                      Luminous efficacy”
+temperatureCCCT)                                           Im/W
+
+” ForLED flat panelluminaires with a rated color rendering index (R.) 三90, the specified values of luminous ef-
+
+ficacy of each grade shall be decreased by 10 Im/W.
+4.2 Minimum allowable values of energy efficiency
+Minimum allowable values of energy efficiency of LED flat panel Iluminaires are the values of Grade
+3 specified in Table 1.
+4.3 Color rendering index CCRID
+The rated general CRI，R.,，of LED flat panel Iluminaires shall not be less than 80，and the de-
+crease of measured value relative to rated value shall not be greater than 3. The measured spe-
+cial CRI (CRs) shall be greater than 0.
+
+2

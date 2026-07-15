@@ -1,0 +1,41 @@
+GB/T 36949一2018
+3.2
+功率因数 ”power factor
+所测得灯的有功功率与灯的输入电压(有效值)和输入电流(有效值)的乘积之比。
+3.3
+早期失效 early failure
+灯在老炼过程中所发生的不能出光 .可观测闪烁或光通量明显降低等失效情况.。
+3.4
+寿命(单只灯的) life (of an individual lamp)
+3.5
+失效 ”failure
+产品执行所需功能的能力的终止。
+注 1: 失效后产品出现缺聊.
+注 2:“和失效"是一个事件 ,不同于“故障"故障"是一个状态。
+注 3: 这个概念的定义不适用于只包括软件的产品。
+3.6
+中值寿命 median useful life
+灯的光通维持率达到本标准要求,并能继续燃点至 50儿的灯的光通维持率误减到70%时的累积燃
+点时间 .
+3.7
+双端LED 灯的光束轴线 optical beam axis of double-capped LED lamp
+双端LED 灯横截面上光强度分布大体呈对称状态的轴线。
+3.8
+双端LED 灯的中心光强 center beam intensity of double-capped LED lamp
+在双端LED 灯的光束轴线上测得的发光强度值。
+注, 单位为坎德拉。
+3.9
+双端LED 灯的光束角 beam angle of double-capped LED lamp
+双端LED 灯横截面上两条给定直线之间的夹角.这两条直线分别通过灯的横蕉面中心和发光强度
+注,，C90-C270 平面即为灯轴线中心的横截面，
+3.10
+宽光束型双端LED 灯 double-capped LED lamp with wide beam
+光束角不小于 180 "的双端LED 灯。
+3.11
+窄光束型双端LED 灯 double-capped LED lamp with narrow beam
+光东角大于或等于120 ,上且小于 180 的双端LED灯。
+4 产品分类与型号
+4.1 产品分类
+4.1.1 光通量规格
+按灯的标称光通量分类,分别与灯的管型和长度对应 ,详见表 1。
+2

@@ -1,0 +1,46 @@
+GB/T 22907一2008/CIE 121一1996
+缩写词:LOR允
+广: LOR双=LORXBLEF;,因为大多数灯具能与 BLE 不同的镇流器工作,最好的情况是LOR 就是LORW。
+2. 2
+(灯具)上(下)射光通 mpward (downward) flux fraction (of a luminaire)
+灯具的所有光通量中在穿过灯具光度中心的水平面以上(下)出射的部分。
+缩写词;UFF
+2.2.7
+上(下)射光通输出比(灯具) upward (downward) light output ratio (of a luminaire)
+灯具光通输出比和上射(下射)光迁部分的用积。光输出比可以是光通输出比或者适当时是有效光
+通输出比。
+编写词,ULOR(DLOR)
+2.2.8
+(灯具)平均亮度 average juminance (of a Juminaire)
+在灯具给定方向上 ,单位投影发光面积的光强。
+2.2.9
+使用转换系数 service conversion factor
+当使用条件不同于标准测试条件时,将标准测试条件下的光度数据转换成使用条件下数据的系数，
+2.3 测量术语
+2.3. ]
+绝对测量 absolute measurement
+以适当的 SL 单位度量的测量,
+2. 3.2
+相对测量 relative measurement
+用任意单位相同类型的两个参量的比率进行的测量或者相关于特定裸光谭光通量的 SI 单位制的
+测和量。
+2. 3. 3
+裸光源测量 bare lamp measurement
+为了确定光输出比或每 1000 lm 光源光通的灯具数据,光源独立于灯具的测量。
+2.3.4
+(灯具)基准条件 reference conditions (luminaire)
+根据本标准第 4 章的要求进行灯具光度测量的条件。
+2. 3.5
+(光通)基准条件 reference conditions (lamps)
+根据 IEC 光源相关规定[5-11]测重光源光通量的条件，
+2. 3.6
+基准镇流器 reference ballast
+为镇流器测试提供一个参比标准而设计的一种电感型镇流器,用来选择基准光源和在标准条件下
+测试常规的光源产品 。
+往, 每种光源类型的基准镇流器的电气参数在征用的 TEC 光源规范[5-11]中给出,而电气要求则在通用的 TIEC 镇
+流器规范L12-16]中给出，
+2.4 测试设备的术语
+怪. 4。 |]
+光度计 photometer
+测量光度参数的设备。
+3

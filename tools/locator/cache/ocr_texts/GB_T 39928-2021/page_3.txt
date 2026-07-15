@@ -1,0 +1,32 @@
+GB/T 39928一2021
+Contents
+
+和 Segpe
+2 Normative referenCeSs ee
+3 Terms and definitionSs ee ee
+4 Product classification and nomination ee 5
+4.1 Product classification ee 5
+AGO LE
+5 Technical reguirementSs ee 6
+5.1 Safety requirements ee 6
+5.2 ”Lamp outlines dimensions and lamp cap ee 6
+5.3 Lamp poWer ee 6
+5.4 Displacement factgr ee ee 6
+5.5 Initial Iluminous flUX
+5.6 Initial luminous efficacy ee 了
+5.8 Life 9
+5.9 EMC characteristicSs ee 9
+5.10 “Marking and packaging ee 10
+6.1 General requirements for tests 11
+6.2 Overall dimension and lamp cap (5.2) 11
+6.3 Electric and photometric parameters 和ee 12
+64 Life (5.8) ee 2
+6.5 EMC characteristics (5.9) 12
+6.6 ”Marking (5.10.1) 12
+7 Inspection ruleSs ee 3
+
+Annex A (Cinformative) Measurement method of junction temperature of LED filament
+四mp 15
+Bibliggraphy ee es 19
+
+T

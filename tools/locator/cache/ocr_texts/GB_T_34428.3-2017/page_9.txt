@@ -1,0 +1,27 @@
+GCB/T 34428.3一2017
+表2 当前显示内容数据一ASCII 码组正文编码格式
+信息文件是理与当胡          标识信息文件是和理与当前显示内容一致,0-一
+实际显示相匹配                         致:1-不一至
+4.3.1.3 XML 编码
+XML 纲码的当前显示内容数据的正文如下 :
+《XSIeLlement name一TEXT” )
+4XSYICOmpD1exTYpe，
+MXS: Sequence)
+《XS:element name一 Displaying 七Ype一 xs:unsignedByte /》
+《XS :elLement name一 DispContent tvVvpe一 XSs:String /
+4 /其与 :司马何UeITEC后)
+{《/XS:ComplexTypey)
+《1 XSY elLementy》
+其中 Displaying(与当前显示一致)会义与取值与 ASCII 编码一致:DispContent(显示人信息文件内
+容)部分与 ASCII 码组编码一致 ,显示信息文件内容格式见 4.3.1.4。
+4.3.1.4 显示信息文件格式
+表3 显示信息文件格式
+   长度(字|
+            吕示民数                     取值范围为 ASCII 码宇符 "01 "一“99”,先传高位,后传低
+                  位,代表信息分屏显示时的屏数
+2             分电符                      采用回车接制字符,取值十六进制 0DH
+4.3.1.5 ”单屏显示内容格式
+单屏显示内容以文本方式通过以下基本单元格式表述，
+string{fNCXxXxxyyyNcrrrgggbbbvSxxvFEnhhwwANvBnnn)
+基本单元定义见表 4。
+二

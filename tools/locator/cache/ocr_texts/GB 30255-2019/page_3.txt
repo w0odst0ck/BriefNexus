@@ -1,0 +1,29 @@
+GB 30255一2019
+Minimum allowable values of energy
+efficiency and energy efficiency grades of
+LED products for indoor lighting
+1 Scope
+This standard specifies the energy efficiency grades, minimum allowable values of energy efficiency ,
+color rendering index，lumen maintenance and test methods of LED downlights，directional
+integrated LED lamps and non-directional self-ballasted LED lamps for indoor lighting.
+This standard is applicable to LED downlights using LED as light sources，with rated voltage not ex-
+ceeding AC 250 V， rated frequency of 50 Hz，rated power of 2W and above and beam angle二60 ，
+excluding the LED downlights with integrated LED lamps.
+This standard is applicable to directional integrated PAR16，PAR20，PAR30 and PAR38 LED lamps
+with rated voltage of AC 220 V, rated frequency of 50Hz，whose caps according to the requirements
+of GU10，B22，E14 or E27.
+This standard is applicable to non-directional self-ballasted LED lamps with rated voltage of AC 220
+V，rated frequency of 50 Hz， rated power of 2 W一60 W (both inclusive) ，excluding the non-direc-
+tional self-ballasted LED lamps with extra optical lens design.
+This standard is not applicable to the LED products for indoor lighting with additional non-lighting re-
+lated power-consuming functions or with dimmable/ycolor tunable functions.
+2 Normative references
+The following referenced documents are indispensable for the application of this document， For
+dated references,， only the edition cited applies. For undated references, the latest edition of the ref-
+erenced document (including any amendments) applies.
+GB/T 24824, Measurement methods of LED modules for general Jighting
+GB/T 24826,. General Jighting一Light emitting diode (LED) products and related equipment一Terms
+and definitions
+GB/T 24908, Non-dlirectional Sef ballastead LED-lamps for general lighting services一Performance re-
+
+1

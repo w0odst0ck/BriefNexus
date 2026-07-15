@@ -1,0 +1,42 @@
+GB 5337一85
+在规定瞬间所测得流经火花电极问的电流。
+4.14 ”火花持续时间 spark duration
+在规定的条件下，火花跳越火花电极间隙的时间间隔，或电流流经火花电极间隙的时间间隔。
+4.15 ”次级电压上升时间 。 secondary voltage rise time
+在规定的条件下，次级电床从某一值上升到另一值所需的时间，以hs 表示。
+4.16 半均输入电流average current input
+在规定的条件下，用直流电流表测得的输入点火系统的电流。
+4.17 ”峰值线圈电流“peak coil current
+在电感点火系统中，点火线圈初级绕组中通过的峰值电流。
+4.18 断电电流 interruption current
+在电感点火系统中，断电时流经初级绕组的电流。
+4.19 断电触点电流 ”contact breaker current
+在规定的条件下，当触点断开瞬间流经断电触发装置的触点电流。
+4.20 ”初级供电电压primary supply voltage
+在规定的条件下，点火系统初级接线端的直流电讨。
+4.21 ”线疾初级感研电讨 coil primary induced voltage
+4.22 最低工作转速”minimum operating speed
+在规定的条件下，点火系统正常工作的最低发动机转速。
+4.23 ”储存能量 stored energy
+4.23.1 对于电感点火系统 “with inductive system
+大 =
+式中:，jJ 一一储存在线圈中的能最，J;
+工一一初级电感，H;
+7 一一断电电流，A 。
+4.23.2 ”对于电容放电点火系统 With capacitor discharge system
+JP -=工C卫
+2
+式中:有zz 一一储存在初级电容器中的能量，汪
+C 一一初级电容器的电容量，F ，
+态 一一在放电时电容器两端的电压，V 。
+4.24 励磁时间间隔〈闭合凶) energizing interval (dwell angle)
+对点火系统初级进行充电所经廊的时间间阿，用曲轴或分电器轴的旋转角度表示。
+4.25 ”最高连续发火转速“maximum continued sparking speed
+在规定的条件下，标准三极针状放电器上能连续发火的分电器最高转速。
+4.26 ”点火提前角 spark advance angle
+从火花塞电极间跳火开始，活塞运行到上止点时曲轴转过的角度。
+4.27 ”离心提前角 centrifugal advance angle
+根据发动机转速提前点火的角度。
+4.28 ”真空提前角 vacuum advance angle
+根据发动机负荷提前点火的角度。
+8

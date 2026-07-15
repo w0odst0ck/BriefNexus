@@ -1,0 +1,29 @@
+GB/T 13786一2022
+4.2 General color rendering index
+The general color rendering index shall not be lower than 92.
+5 IIumination quality
+The ilumination intensity in the working area (from the centre to the edge of the classing table) of
+cotton color classing shall be within the range of (1 100土100) Ix. The uniformity ratio of iuminance
+shall not be less than 0. 8.
+6 IIlumination condition
+Artificial daylighting ilumination shall be widely diffused and cover sufficient directions to allow the
+cotton inspector to perceive the depth when observing the cotton sample， lumination conditions
+Shall be as consistent as possible throughout the entire working area of the cotton classing room.
+Glare and cross lighting are not allowed and the contrast between the light source and the brightness
+of the surroundings shall be kept to a minimum level.
+7 Technical requirements and installation methods of illumination units
+7.1 Technical requirements
+7.1.1 Artificial daylighting ilumination units shall be installed in cotton classing rooms which have
+no windows or can eliminate interference from external lights.
+7.1.2 The ilumination unit shall provide the required quality and intensity of ilumination on the
+Surface of the cotton color classing table， According to the technical specification of the ilumination
+unit，Calculation and design are performed， so the ilumination of the whole cotton grading room can
+be distributed as evenly as possible. lumination units shall be enclosed with lightweight and practi-
+cal use to facilitate installation ，inspection and maintenance. lt is recommended to design and install
+the iumination unit together with the air conditioner.
+7.1.3 员umination units shall use spectral neutral diffuse reflection glass to minimize chromatic
+contrast.
+7.2 Installation methods
+7.2.1 Specification of ilumination unit shallbe 0.6mx1.2mor0.6 mx0.6 m.
+
+1

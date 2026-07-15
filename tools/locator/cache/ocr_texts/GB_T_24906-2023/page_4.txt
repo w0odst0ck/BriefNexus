@@ -1,0 +1,65 @@
+GB/T 24906一2023/7IEC 62560:2015
+普通照明用50 V 以上目镇流 LED 灯
+安全规范
+1 函围
+
+本文件规定了在家寿和关羽场合作为普通照明用的、把稳定燃点部件集成为一体的 LED 灯(〈目钙
+流 LED 灯) 。本文件对该种灯规定了安全和互换性要求，以及试验方法和检验其是否合格的条件。
+
+本文件运用于如下续围:
+
+一一额定功率60 W 及以下
+
+一一额定电压大于50 V 且小于或等于250 V:;
+
+一一灯头符合表1要求。
+
+本文件的要求只涉及型式试验。
+
+关于全部产品的检验或批量检验见IEC 62031 的附录C。
+
+注1:本文件中出现的“灯”代表“目镇流 LED 灯”, 除非特别指明是其他类型的灯。
+
+注2:本文件包括光生物安全技术要求。
+
+2 规范性引用文件
+
+下列文件中的内容通过文中的规范性引用而构成本文件必不可少的条短。其中，注日期的引用文
+件，仅廊日期对应的砌本适用于本文件: 不注日期的引用文件，其最新版本(和包括所有的怪改单) 适用于
+本文件。
+
+6B/Z39942一2021 ”应用6B/T 20145评价光源和人灯具的监光危害(IEC TR 62778:2014, IDT)
+
+注 : IEC TR 62778已被撤销，本文件使用6B/Z739942一2021 代替IEC TR 62778 不产生技术差异。
+
+IS0 4046-4 纸、纸板、纸加及相关术语 词汇 第4部分: 纸和纸板的等级和加工产品
+【Paper,board,pup and related terms-一Yocabulary-一Part 直:Paper and board grades and converted
+products)
+
+IEC 60061-1 为头、为故及机验其互换性和安全性的量规”串1部分: 灯拓(Lamp caps and
+holders together with gauges for the control of interchangeability and safety一Part 1:Lamp caps)
+
+注: GB/T1406 《所有部分) 灯头的型式和乓寸(IEC 60061-1)
+
+IEC 60061-3 灯头、灯座及检验其互换性和安全性的量规 第3部分: 量规(Lamp caps and
+holders together with gausges tor the control oft interchansgeablility and safety-一Part 3:(Crauges)
+
+注， 6B/T1483 《所有部分) 灯头灯座检验量规(IEC 60061-3)
+
+IFEC 60360 灯头温升的出量方法(Standard method of measurement of lamp cap temperature
+TsSe)
+
+注 : GB/T24392一2009 ”灯头训升的删量方法WEC 60360:1998，IDT)
+
+IEC 60529 外壳防护等级(IP 代但)[Degrees of protection provided by enclosures(IP Code)]
+
+注: GB/7T 4208一2017 外壳防护等级(IP 代码) (IEC 60529:2013, IDT)
+
+IEC 60598-1灯有具 第1部分:一般要求和试验(Luminaires一Part 1:General requirements and
+tests )
+
+注 : 6B/T7000. 1一2023 ”灯具 第1部分:  -骨要求和试验WIEC 60598-1:2020, MDD)
+
+IEC 60695-2-10 有寿兴估障试验 第210部分: 知拓经/关上丝基本试攻方法 知状绎妆直和通用斌
+
+]

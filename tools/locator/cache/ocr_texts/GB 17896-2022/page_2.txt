@@ -1,0 +1,24 @@
+GB 17896一2022
+Contents
+
+ForewWard .ee ee ee
+1 SEOpe
+2 Normative referenCeS ee
+3 Terms and definitionS ee se ss seess sseses ssensss ss
+4 Technical reguirements ee
+和.1 Energy efficiency gradeSs
+4.2 Minimum allowable value of energy efficiency pe 0
+4.3 Standby poWer ee 10
+5 Test methogdSs 1
+5.1 Ballasts for tubular fluorescent lamps pr 1
+5.2 Ballasts for single-capped fluorescent induction lamps pp 1
+5.3 Ballasts for metal-halide lamps 11
+5.4 Ballasts for high-pressure sodium lamps 11
+
+Annex A (Normative) Test method for energy efficiency of electronic ballasts for single-capped
+fluorescent induction lamps 12
+A.1 Ballast efficiency test methgod pp 2
+A.2 Standby power test methgd pp 3
+A3 Test conditionSs ooeeseoeee sossnneeesoeeoneoseonsnooeesoeeosoooeonooooooooeeoooooerooooooooooeooooeooooeeooe 14
+
+T

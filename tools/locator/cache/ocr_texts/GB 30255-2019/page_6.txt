@@ -1,0 +1,35 @@
+GB 30255一2019
+value of Iuminous efficacy of each grade shall be decreased by 10 Im/W on the basis of the respec-
+tive value specified in corresponding tables.
+4.2 Minimum allowable value of energy efficiency
+4.2.1 Minimum allowable values of energy efficiency of LED downlights are the values of Grade 3
+specified in Table 1.
+4.2.2 ”Minimum allowable values of energy efficiency of directional integrated LED lamps are the
+values of Grade 3 specified in Table 2.
+4.2.3 Minimum allowable values of energy efficiency of non-directional self-ballasted LED lamps are
+the values of Grade 3 specified in Table 3.
+4.3 Color Rendering Index (CRD
+The initial CRI CR。.) of LED downlights, directional integrated LED lamps and non-directional self-bal-
+lasted LED lamps shall not be less than 80 as well as Rs。 shall be greater than 0. The measured CRI val-
+ue shall not have decreased by more than 3 points from the rated CRI value.
+4.4 Lumen maintenance
+The Ilumen maintenance at 3 000 h of LED downlights，directional integrated LED lamps and non-di-
+rectional self-ballasted LED lamps shall not be less than the required value of Ilumen maintenance re-
+lated to rated life. According to the claimed rated life, the required value of Ilumen maintenance shall
+be calculated by Formula (1).
+
+LM= (709% )                                                                                                       (1)
+
+0
+
+where
+
+LM is Ilumen maintenance:
+
+to is rated life， expressed in hours (h).
+5 Test methods
+5.1 LED Downlights
+Luminous efficacy，correlated color temperature and color rendering index of LED downlights shall
+be tested in accordance with test methods specified in GB/T 29293.
+
+4

@@ -1,0 +1,23 @@
+GB 30255一2019
+Foreword
+Standardization Administration of China is in charge of this English translation. In case of any doubt
+about the contents of English translation ，the Chinese original shall be considered authoritative.
+This standard is drafted in accordance with the rules given in the GB/T 1.1一2009 Directives for
+standardization一Part 1: Structure and drafting of standards .
+This standard is mandatory.
+This standard replaces GB 30255一2013 Minimum allowable values of energy efficiency and energy
+efficiency grades of non-directional sefballasteq LED-lamps for general Jighting services ，anad im-
+tegrates the content related to non-directional selfballasted LED Iamps therein.
+The following significant technical changes have been made with respect to the GB 30255一2013 :
+一lt is clarified in the scope that"This standard is not applicable to the LED products for indoor light-
+ing with additional non-lighting related power-consuming functions or with dimmableycolor tunable
+function.”;
+一The values of Iuminous efficacy for non-directional self-ballasted LED lamps of each grade have
+been revised (See 4.1.4);
+一The technical requirements for Ilumen maintenance have been revised (See 4.4) ;
+一The test methods of correlated color temperature，color rendering index and Ilumen maintenance
+have been added (See 5.3).
+This standard was proposed and prepared by Standardization Administration of China.
+This previous edition of this standard is as follows:
+一GB 30255一2013.
+T

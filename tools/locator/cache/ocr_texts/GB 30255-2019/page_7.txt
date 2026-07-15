@@ -1,0 +1,19 @@
+GB 30255一2019
+The applicable test methods for lumen maintenance are determined based on whether LED downlights
+adopt LED packages with LM-80 test reports :
+When the LED downlight adopts the LED packages with LM-80 test reports and the corresponding pa-
+rameters listed in the reports are verified compliance by testing and calculation， then 3 000 h Ilumen
+maintenance in the LM-80 test reports can be accepted as the Ilumen maintenance at 3 000 h for the
+LED downlight. If the verification indicates non-compliance，or the LED packages without LM-80 test
+reports， then Ilumen maintenance shall be tested in accordance with the test methods specified in
+GB/T 29293.
+5.2 Directional integrated LED lamps
+Luminous efficacy， correlated color temperature,， color rendering index and Ilumen maintenance of di-
+rectional integrated LED lamps shall be tested in accordance with the test methods specified in GB/T
+29295 and GB/T 29296.
+5.3 ”Non-directional self-ballasted LED lamps
+Luminous efficacy，correlated color temperature，color rendering index and Ilumen maintenance of
+non-directional self-ballasted LED lamps shall be tested in accordance with the test methods specified
+in GB/T 24824 and GB/T 24908.
+
+5

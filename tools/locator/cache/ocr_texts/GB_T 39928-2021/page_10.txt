@@ -1,0 +1,30 @@
+GB/T 39928一2021
+3.5
+displacement factor
+cosine of the phase-angle between the fundamental wave of the supply voltage and the fundamental
+wave of the Supply current
+NOTE 1 Represented by cosy，
+NOTE 2 ”The displacement factor is explained in Annex F of GB/T 24823一2017.
+NOTE 3 ”Rewrite GB/T 24833一2017，definition 3.19.
+3.6
+lumen maintenance
+for alight source operated at the specified condition , the ratio of the Iluminous flux emitted at a giv-
+en time in the life to the initial Iluminous flux
+NOTE “The ratio is usually expressed as a percentage.
+[GB/T 24826一2016 ,definition 3.28]
+3.7
+color drift
+the difference between the initial color and the color of the lamp at a given time during its life while
+the lamp operating at specified conditions
+NOTE It can be expressed as the color difference Au'v' of the average color of the lamp or of the point under the lamp，
+with specified distance in CIE 1976 (由 ,v“) uniform chromaticity space.
+3.8
+early failure
+the failure of the lamp during the aging process of 1 000 h,， such as no light, visible flicker or obvious
+decrease of Iluminous flux ，etc.
+NOTE Rewrite GB/T 36949一2018，definition 3.3.
+3.9
+average life
+number of operating hours elapsed at which point 50% of a representative group of lamps whose lu-
+men maintenance decreases to 70% during life test
+4

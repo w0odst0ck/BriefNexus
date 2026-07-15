@@ -1,0 +1,29 @@
+GB/T 13786一2022
+3.7
+illumination
+the Iluminous flux of visible light received per unit area
+NOTE The unit is Ilux (lx).
+3.8
+average illuminance
+the average iluminance of each illuminance on the specified surface
+3.9
+uniformity ratio of illuminance
+the ratio of the minimum iluminance to the average iluminance on the specified surface
+[source: GB/T 2900. 65一2004,， 845-09-58,， modified]
+3.10
+neutral color
+an object”s surface color without selectivity absorption of light spectrum
+[source: GB/T 5698一2001, 4.2]
+3.11
+Munsell neutral value scale
+a series class of lights that covers from complete black (CN 0) to complete grey(CN 5) to complete
+white CN 10).
+NOTE ”For example: Munsell Neutral N7.0 is light grey, N 8.0 and N 8.5 are lighter greys,， while N 9.5 is a very good
+
+white
+4 IlIumination quality
+4.1 Correlated color temperature
+The correlated color temperature shall be (7 500土200)K. The spectral power distribution of artificial
+daylight for the cotton classing rooms shall be as close as possible to the CIE D75 ilumination color
+quality standard curve shown in Annex A.
+3

@@ -1,0 +1,42 @@
+GB 5337一85
+被代蔡的同义词: “中性点”接线柱。
+2.3 无出交流发电机 brushless alternator
+无电出、闭环结构的交流发电机。
+2.4 丈体式交流发电机 integrate alternator
+内著电子调节器的交流发电机。
+2.5 答出特性曲线 output characteristic_ curve
+当发电机电庄维持一定值时，输出电流随转速变化的关系曲线。
+2.6 空载转速 cut -in speed
+当发电机负载为，端电庄达到额定电压值时的发电机转速。
+2.7 负载转速”load speed
+发电机在达到壬定电压及电流时的转速。
+2.8 最大条出电流 “maximum current outpat
+交流发电机在额定电讨时，其输出电流随转速增加至不再继续增加时的值。
+2.9 磁场电流 ”field current
+发电机工作时通过磁场绕组的电流。
+2.10 内拱铁 internal earth
+2.11 外搭铁 external earth
+发电机磁场绕组的一端通过调节器后搭铁。
+2.12 直流发电机调节器 DC generator regulator
+控制直流发电机输出的装置，由电讨调节器、电流限制器和截流继电器组成。
+被代替的同义河: 继电调节器。
+2.12.1 电压调节器voltage regulator
+把发电机输出电压控制在规定范围的调节装置。
+被代蔡的同义词，节压器，调压器。
+2.12.2 电流限制器current limiter
+把发电总输出电流限制在规定范围的调节装置。
+被代替的同义词:节流器，限流器。
+2.12.3 ”截流继电锅cutout relay
+把发电机与蓄电池电路自动挡通与切断的装置。
+被代蔡的同义词，逆流继电器，截流器。
+2.13 交流发电机调节器alternator regulator
+把交流发电机笨出电压控制在规定范围的调节装置或与其他辅助装置组合在一起的装什。
+2.13.1 磁场继电器 ”field relay
+被代琵的同义词，防倒流继电器。
+2.13.2 ”充电指示继电器 charge indicator relay
+被代替的同义词，充电指示灯继电器。
+2.14 电磁振动式调节器 electromagnetic regulator，vibrating type regulator
+被代替的同义词，振动式调节器，触点式调节器，电磁式调节器。
+2.14.1，单级电磁振动式调节器 “single stage voltage regulator
+通过一对触点的开闭控制发电机电压的装置。
+3

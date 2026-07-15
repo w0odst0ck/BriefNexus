@@ -1,0 +1,25 @@
+GB 19044一2022
+GB/T 17262, Single-capped fluorescent lamps一Performance specification
+GB/T 17263 ,Self ballasted lamps for general lighting service一Performance requirements
+GB/T 21091, Sefballasted electrodeless fluorescent lamps for general Jighting services一Perform-
+ance requirements
+GB/T 34841, Fluorescent induction /lamps一Performance specification
+3 Terms and definitions
+For the purpose of this document, the terms and definitions given in GB/T 10682, GB/T 17262，
+GB/T 17263,GB/T 21091,GB/T 34841 and the following apply.
+3.1
+luminous efficacy of fluorescent lamps
+ratio of the initial Iuminous flux to the input power of fluorescent lamps under the specified testing
+conditions
+NOTE ”The luminous efficacy of a fluorescent lamp is expressed in Im/wW.
+3.2
+minimum allowable value of energy efficiency for fluorescent lamps
+the minimum allowable value of Iluminous efficacy of fluorescent lamps under the specified testing
+conditions
+4 Technical requirements
+4.1 Energy efficiency grades
+4.1.1 The energy efficiency levels of fluorescent lamps are classified into three grades, of which
+Grade 1 is the most efficient.
+4.1.2 The Iluminous efficacy of self-ballasted fluorescent lamps of each grade shall not be less than
+respective values specified in Table 1.
+2

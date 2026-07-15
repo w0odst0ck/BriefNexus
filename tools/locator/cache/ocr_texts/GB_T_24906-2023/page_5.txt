@@ -1,0 +1,71 @@
+GB/T 24906一2023/IEC 62560:2015
+验万法(Fire hazard _ testing一Part 2-10:Glowing/hot-wire based test methods一Glow-wire apparatus
+and common test Procedure)
+
+注 : 6B/T5169. 10一2017 ”电工电子产品看火和危险试台 ”第10部分: 灼热丝/热丝基本试验方法 灼热丝装置和
+
+通用试验方法(IEC 60695-2-10:2013,，IDT)
+
+IEC 60695-2-11 着火危险试验 第2-11 部分: 灼热丝/热丝基本试验方法”成品的灼热丝可燃性
+试验方法(GWEPT)[Fire hazard testing一Part 2-11:Glowing/hot-wire based test methods一Glow-
+wire 了症ammability test method tor end products (GOYWE上PT
+
+注 : 6B8/T5169. 11一2017 ”电工电子产品看淡有危险试验 第11部分: 灼热丝/热经基本试骆方法“成品的灼热经
+
+可燃性试验方法(GWEPT) (IEC 60695-2-11:2014, IDT)
+
+IEC 60695-2-12 着火危险试验 囊212部分购热丝/热丝基本试验方法”材料的灼热丝可燃性
+指数(GWEFDT 试验方法[Fire hamrd testing一Part 2-12: Glowing/hol wire based test methods一Glow-
+wire flammability index (GWFD test method for materialsy
+
+注 : 6B/T5169. 12 -2013 ”电上电子产品看火艺险试验 第12部分: 灼热到/郝经基本试骆方法“材料的灼热综
+
+可燃性指数(WEFT) 试验方法(IEC 60695-2-12:2010, IDT)
+
+IEC 60695# -13 和少火危险试验 第2-13部分: 灼热丝/热丝基本试验方法 材料的和灼热丝起如温
+上度(GWIT)斌和方;去 Fire hazard testing一Part 2-13:Glowing/hot-wire based test methods一Glow-
+wire lgnition temtferatute(GYWIT)test metbod for materials)]
+
+注 : 6 BF5160.13一2013  ”电上电子产品腹水危险读胞第3部分，和灼热仅/热丝基本试验方法材料的灼热丝
+
+起原温度GWIT) 试验方法QEC60696213:2010,IDT)     四
+
+IEC613471 ”区源控制要首一第1部分: 一般要求和安全归求(Lanp cohrolar一Part 1
+General and safety requlrements
+
+计: BATS10.1   一2023 区趣接制半置”利1部分: ”一般要求和安伴要陈AE061347-1:20 育，MOD)
+
+IEC2037    普通照明用 1ED 模块 划企规范(LED modules for general lighing一Safety specifi-
+CatiOTS )
+
+注 : GBT2489 2023    普明有昭明用LED 哥顽一安全规泡BC62081:2018. 101)
+
+IEC62604 普通照明LED产品和相交设备一木语和定义Ceneral lightingLight emitting di
+Dodef(LED) poduca and related _ equipment一Terms and definttlons
+
+注 : GB/T2 4826-2016 “普通照明用LED 产品和相关设备”术语和定义(IEC 625042014 ,DT )
+
+3 术语和定义
+
+IEC 62504和 IEC 6203下春定的以及下列林语和定艾运用于本文件。
+3. 1
+
+目镇流 LED灯 。 self-ballasted LED-lamp
+
+内 含 LED 光源和保持其稳定燃点所必需的元件并使之为一体的灯，这种灯在不损坏其结构时是不
+可拆番的。
+
+注，所有灯头在 IEC 60061-1中给出。
+
+.2
+
+额定电庄 rated voltage
+
+灯上标明的电压或电压范围。
+.号
+
+箱定功率 rated wattage
+
+灯上标明的功牵。
+
+了
