@@ -15,6 +15,8 @@ FastAPI 入口 — BriefNexus 通用采集平台 HTTP API
   GET    /v1/sources            列出启用源
   GET    /v1/healthz            健康检查(db + worker 心跳)
 """
+import hashlib
+import inspect
 import json
 import logging
 import os
@@ -34,7 +36,8 @@ from platform import config, db, scheduler
 from platform.scheduler import Scheduler
 
 from fastapi import APIRouter, FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("platform.api")
 
@@ -42,9 +45,16 @@ SYNC_TIMEOUT_S = 30  # /collect/sync 最大阻塞时长
 ITEM_PAGE_MAX = 500  # items 分页 limit 上限
 
 
+class CollectorSpec(BaseModel):
+    """随请求传入的源本体(D16): module 引用 或 code 内联,二选一"""
+    module: str | None = None   # "module.path:ClassName" 模块引用
+    code: str | None = Field(None, max_length=65536)  # 内联源码上限 64KB(防 DB/内存滥用)
+
+
 class CollectRequest(BaseModel):
     """提交采集任务请求体"""
-    source: str
+    source: str | None = None       # 可选别名: 查配置,查不到 422
+    collector: CollectorSpec | None = None  # 源本体(module 或 code 二选一)
     params: dict | None = None
     domain: str | None = None
     callback_url: str | None = None
@@ -112,8 +122,11 @@ def item_to_api(row: dict) -> dict:
 
 
 def task_to_api(task: dict) -> dict:
-    """tasks 行 → API 响应(不含 items;archived=1 表示已归档,结果已被清理)"""
-    return {
+    """tasks 行 → API 响应(不含 items;archived=1 表示已归档,结果已被清理)
+
+    D18: traceback/collector_log 非空时才透出(避免污染无失败任务的响应形状)。
+    """
+    body = {
         "task_id": task["id"],
         "status": task["status"],
         "source": task["source"],
@@ -123,6 +136,11 @@ def task_to_api(task: dict) -> dict:
         "items_count": task["items_count"],
         "archived": bool(task.get("archived", 0)),
     }
+    if task.get("traceback"):
+        body["traceback"] = task["traceback"]
+    if task.get("collector_log"):
+        body["collector_log"] = task["collector_log"]
+    return body
 
 
 # ---------- 应用工厂 ----------
@@ -166,19 +184,74 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     router = APIRouter()
 
     def _submit_task(req: CollectRequest) -> str:
-        """校验 source + params → 创建 pending 任务,返回 task_id"""
-        info = config.get_source_info(req.source)
-        if info is None:
-            raise HTTPException(status_code=422, detail=f"unknown source: {req.source}")
-        try:
-            cls = config.resolve_collector_class(info["module"])
-        except Exception as e:
-            logger.error("源 %s 类解析失败: %s", req.source, e)
-            raise HTTPException(status_code=500, detail=f"source module error: {req.source}") from e
-        err = validate_params(cls, req.params or {})
-        if err:
-            raise HTTPException(status_code=422, detail=err)
-        return db.create_task(req.source, req.params or {}, req.domain, req.callback_url)
+        """校验 source/collector + params → 创建 pending 任务,返回 task_id
+
+        D16 校验链:
+          - collector 有值 → module/code 二选一(都空/都填 422);
+            code 需 ALLOW_INLINE_CODE=true 且通过 AST 安全检查(exec 前)
+          - source 有值 → 查配置(命中则用,查不到 422「源未注册」)
+          - 都空 → 422
+        任务存储: collector_spec JSON(module/code/version)写入 tasks 列。
+        """
+        collector_spec = None
+        if req.collector is not None:
+            spec = req.collector
+            if (spec.module is None) == (spec.code is None):
+                raise HTTPException(status_code=422,
+                                    detail="collector.module 与 collector.code 必须二选一")
+            if spec.code is not None:
+                if not config.is_inline_code_enabled():
+                    raise HTTPException(
+                        status_code=422,
+                        detail="代码内联未启用（ALLOW_INLINE_CODE=true 开启，仅限本机）")
+                try:
+                    cls_or_fn, source_name = scheduler.resolve_inline_collector(spec.code)
+                except scheduler.InlineCodeBlocked as e:
+                    raise HTTPException(status_code=422,
+                                        detail=f"collector.code 含禁止操作: {e}") from e
+                except ValueError as e:
+                    raise HTTPException(status_code=422, detail=str(e)) from e
+                code_hash = hashlib.sha256(spec.code.encode("utf-8")).hexdigest()
+                collector_spec = json.dumps(
+                    {"code": spec.code, "version": code_hash}, ensure_ascii=False)
+                # 类式内联同样支持 PARAM_SCHEMA 校验
+                if inspect.isclass(cls_or_fn):
+                    err = validate_params(cls_or_fn, req.params or {})
+                    if err:
+                        raise HTTPException(status_code=422, detail=err)
+            else:
+                # collector.module 引用: 调用方代码已部署到平台可访问路径
+                # (collectors_extra_dirs / sys.path)——受信部署前提,import 时执行模块
+                # 顶层代码。安全模型: 平台绑定 127.0.0.1 + 受信调用方,与内联同风险等级。
+                try:
+                    cls = config.resolve_collector_class(spec.module)
+                except Exception as e:
+                    logger.error("collector.module 解析失败 %s: %s", spec.module, e)
+                    raise HTTPException(status_code=422,
+                                        detail=f"collector.module 解析失败: {spec.module}") from e
+                source_name = getattr(cls, "source_name", "") or spec.module
+                collector_spec = json.dumps({"module": spec.module}, ensure_ascii=False)
+                err = validate_params(cls, req.params or {})
+                if err:
+                    raise HTTPException(status_code=422, detail=err)
+        elif req.source is not None:
+            info = config.get_source_info(req.source)
+            if info is None:
+                raise HTTPException(status_code=422,
+                                    detail=f"源未注册: {req.source}，请用 collector 字段传入")
+            try:
+                cls = config.resolve_collector_class(info["module"])
+            except Exception as e:
+                logger.error("源 %s 类解析失败: %s", req.source, e)
+                raise HTTPException(status_code=500, detail=f"source module error: {req.source}") from e
+            err = validate_params(cls, req.params or {})
+            if err:
+                raise HTTPException(status_code=422, detail=err)
+            source_name = req.source
+        else:
+            raise HTTPException(status_code=422, detail="必须提供 source 或 collector")
+        return db.create_task(source_name, req.params or {}, req.domain, req.callback_url,
+                              collector_spec=collector_spec)
 
     @router.post("/collect", status_code=201)
     @router.post("/v1/collect", status_code=201)
@@ -258,22 +331,69 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     @router.get("/sources")
     @router.get("/v1/sources")
     def list_sources():
-        """列出启用源(name/display_name/domains/params)"""
+        """列出启用源(D21 动态发现): 配置挂载源(静态)+ 最近 30 天活跃的动态源
+
+        动态源从 tasks 聚合 last_used/success_count(collector_spec 非空的任务);
+        平台内置 8 源已退役(sources: {}),本端点不再返回内置源。
+        """
+        activity = {r["source"]: r for r in db.get_source_activity(days=30)}
+        static_names = set()
         result = []
+        # 静态: config.d 挂载 / 配置启用的源
         for name, cfg_item in config.get_enabled_sources().items():
+            static_names.add(name)
             cls = None
             try:
                 cls = config.resolve_collector_class(cfg_item["module"])
             except Exception as e:
                 logger.warning("源 %s 类解析失败: %s", name, e)
+            act = activity.get(name, {})
             result.append({
                 "name": name,
                 "display_name": getattr(cls, "display_name", None)
                                 or cfg_item.get("display_name") or name,
                 "domains": list(getattr(cls, "domains", []) or cfg_item.get("domains", [])),
                 "params": cfg_item.get("params") or {},
+                "module": cfg_item.get("module"),
+                "active": True,
+                "last_used": act.get("last_used"),
+                "success_count": act.get("success_count") or 0,
             })
+        # 动态: 最近 30 天 tasks 里有 collector_spec 的活跃源(不在静态名单)
+        for source, act in activity.items():
+            if source in static_names:
+                continue
+            spec = scheduler.parse_collector_spec(act.get("collector_spec"))
+            if not spec:
+                continue  # 纯配置源任务(无 collector_spec)已由静态分支覆盖
+            entry = {
+                "name": source,
+                "active": (act.get("success_count") or 0) > 0,
+                "last_used": act.get("last_used"),
+                "success_count": act.get("success_count") or 0,
+            }
+            if "code" in spec:
+                entry["code_hash"] = spec.get("version")
+            else:
+                entry["module"] = spec.get("module")
+            result.append(entry)
         return result
+
+    @router.get("/template")
+    @router.get("/v1/template")
+    def get_template(lang: str = "python"):
+        """采集器骨架模板(D21): 纯静态文本返回,无逻辑"""
+        if lang != "python":
+            raise HTTPException(status_code=422, detail=f"不支持的模板语言: {lang}")
+        tpl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "templates", "collector.py")
+        try:
+            with open(tpl_path, encoding="utf-8") as f:
+                content = f.read()
+        except OSError as e:
+            logger.error("模板文件缺失: %s", tpl_path)
+            raise HTTPException(status_code=500, detail="模板文件缺失") from e
+        return Response(content=content, media_type="text/plain; charset=utf-8")
 
     @router.get("/healthz")
     @router.get("/v1/healthz")

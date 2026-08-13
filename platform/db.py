@@ -110,7 +110,14 @@ _ITEMS_DDL = """
 
 
 def _create_tables(conn: sqlite3.Connection):
-    """建表: tasks + items + source_stats(与选型书 4.1 一致)"""
+    """建表: tasks + items + source_stats + collector_cache(与选型书 4.1 一致)
+
+    tasks 额外列(D16/D18):
+      - collector_spec: 随请求传入的源规格 JSON(module 引用或 code 内联),
+        为空表示走配置内置源(旧行为)
+      - traceback: 采集器实例化/crawl 异常时的完整堆栈文本
+      - collector_log: crawl 调用期间采集器 stderr 输出
+    """
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id          TEXT PRIMARY KEY,
@@ -124,7 +131,19 @@ def _create_tables(conn: sqlite3.Connection):
             items_count INTEGER DEFAULT 0,
             retries     INTEGER DEFAULT 0,
             callback_url TEXT,
-            archived    INTEGER DEFAULT 0
+            archived    INTEGER DEFAULT 0,
+            collector_spec TEXT,
+            traceback   TEXT,
+            collector_log TEXT
+        )
+    """)
+    # 内联代码缓存(D19): hash=SHA256(code),记录「该代码已通过安全检查」,
+    # 同 hash 复用;编译对象不持久化(pickle code 复杂),进程内另有内存缓存。
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS collector_cache (
+            hash       TEXT PRIMARY KEY,
+            code       TEXT NOT NULL,
+            created_at TEXT
         )
     """)
     conn.execute(_ITEMS_DDL)
@@ -163,7 +182,11 @@ def _migrate(conn: sqlite3.Connection):
     tcols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
     if "archived" not in tcols:
         conn.execute("ALTER TABLE tasks ADD COLUMN archived INTEGER DEFAULT 0")
-    # 4) 防御脏数据: is_ref=0 的同 dedup_key 多行(异常库)→ 保留最小 id,其余转引用
+    # 4) D16/D18 新增列: collector_spec / traceback / collector_log
+    for col in ("collector_spec", "traceback", "collector_log"):
+        if col not in tcols:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
+    # 5) 防御脏数据: is_ref=0 的同 dedup_key 多行(异常库)→ 保留最小 id,其余转引用
     _dedupe_legacy_keys(conn)
 
 
@@ -234,17 +257,22 @@ def make_dedup_key(source: str, title: str) -> str:
 # ---------- tasks CRUD ----------
 
 def create_task(source: str, params: dict | None = None, domain: str | None = None,
-                callback_url: str | None = None, task_id: str | None = None) -> str:
-    """创建任务(status=pending),返回 task_id"""
+                callback_url: str | None = None, task_id: str | None = None,
+                collector_spec: str | None = None) -> str:
+    """创建任务(status=pending),返回 task_id
+
+    collector_spec: 源规格 JSON 字符串(module 引用 / code 内联),
+    None 表示走配置内置源(旧行为)。
+    """
     task_id = task_id or make_task_id()
     import json
     conn = _connect()
     try:
         conn.execute(
-            "INSERT INTO tasks (id, source, params, domain, status, created_at, callback_url) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tasks (id, source, params, domain, status, created_at, callback_url, "
+            "collector_spec) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (task_id, source, json.dumps(params or {}, ensure_ascii=False),
-             domain, STATUS_PENDING, _now(), callback_url),
+             domain, STATUS_PENDING, _now(), callback_url, collector_spec),
         )
         conn.commit()
     finally:
@@ -264,8 +292,9 @@ def get_task(task_id: str) -> dict:
 
 def update_task(task_id: str, status: str | None = None, error: object = _UNSET,
                 finished_at: object = _UNSET, items_count: object = _UNSET,
-                retries: object = _UNSET):
-    """按需更新任务字段;error/finished_at 等传 None 表示显式清空,不传表示不更新"""
+                retries: object = _UNSET, traceback: object = _UNSET,
+                collector_log: object = _UNSET):
+    """按需更新任务字段;error/finished_at/traceback 等传 None 表示显式清空,不传表示不更新"""
     sets, args = [], []
     if status is not None:
         sets.append("status = ?")
@@ -282,6 +311,12 @@ def update_task(task_id: str, status: str | None = None, error: object = _UNSET,
     if retries is not _UNSET:
         sets.append("retries = ?")
         args.append(retries)
+    if traceback is not _UNSET:
+        sets.append("traceback = ?")
+        args.append(traceback)
+    if collector_log is not _UNSET:
+        sets.append("collector_log = ?")
+        args.append(collector_log)
     if not sets:
         return
     args.append(task_id)
@@ -492,6 +527,59 @@ def cleanup(consumed_ttl_days: int = 90, task_archive_days: int = 30) -> dict:
             tasks_archived += 1
         conn.commit()
         return {"items_deleted": items_deleted, "tasks_archived": tasks_archived}
+    finally:
+        conn.close()
+
+
+# ---------- 内联代码缓存(D19) ----------
+
+def upsert_collector_cache(code_hash: str, code: str):
+    """记录某 code 已通过安全检查(同 hash 复用;存在则刷新 code/时间) """
+    conn = _connect()
+    try:
+        conn.execute(
+            "INSERT INTO collector_cache (hash, code, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(hash) DO UPDATE SET code = excluded.code, created_at = excluded.created_at",
+            (code_hash, code, _now()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_collector_cache(code_hash: str) -> dict | None:
+    """按 hash 查缓存记录(存在说明该 code 已通过安全检查) """
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM collector_cache WHERE hash = ?", (code_hash,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+# ---------- 活跃源统计(D21 /sources 动态发现) ----------
+
+def get_source_activity(days: int = 30) -> list:
+    """最近 days 天有任务记录的源聚合统计(活跃源发现 + 静态源 last_used 补全)
+
+    Returns:
+        [{source, last_used, success_count, collector_spec(样例)}]
+    """
+    cutoff = (datetime.now(CST) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = _connect()
+    try:
+        # last_used=MAX(created_at) 精确;collector_spec 仅样例展示(JSON 字典序最大值,
+        # 不保证是最近任务——非关键字段,消费方按 source 维度使用,可接受)
+        rows = conn.execute(
+            "SELECT source, MAX(created_at) AS last_used, "
+            "SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS success_count, "
+            "MAX(collector_spec) AS collector_spec "
+            "FROM tasks WHERE created_at >= ? GROUP BY source",
+            (STATUS_DONE, cutoff),
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 

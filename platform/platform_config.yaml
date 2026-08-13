@@ -7,52 +7,26 @@ server:
   max_workers: 2            # 采集并发线程数(避免打爆反爬目标)
   task_timeout_s: 300       # 单任务超时,超时强制 failed(error=network)
 
+# 代码内联(D16/D20): 是否允许 POST /v1/collect 的 collector.code 字段携带内联源码。
+# 默认关闭;开启仅限本机/受信环境,平台在 exec 前做 AST 安全检查(黑名单导入与
+# eval/exec/compile/open/__import__ 调用拦截)。
+#   启动方式: ALLOW_INLINE_CODE=true python platform/run.py
+#   (或写入 .env;生产环境不建议开启)
+# ALLOW_INLINE_CODE: false
+
 # 外部采集器目录(可选,可多个): 业务项目自维护的适配器目录,平台仓零改动。
 # 启动时扫描目录下 *.py 并以 "_platform_ext_" 前缀模块名挂载(见 config.py)。
 # 外部源通过 config.d 片段声明(见 config.d/README.md)。
 collectors_extra_dirs:
 #  - /path/to/external/collectors
 
-sources:
-  # —— 透出 intel 现有 8 源(enabled=true)——
-  # module 字段: 模块路径:类名,动态 import(不依赖注册表,保留注册表兼容)
-  white_house:
-    enabled: true
-    module: intel.collectors.white_house:WhiteHouseCollector
-    params: {max_age: 7}
-  nvidia:
-    enabled: true
-    module: intel.collectors.nvidia_blog:NvidiaBlogCollector
-    params: {max_age: 7}
-  sec_edgar:
-    enabled: true
-    module: intel.collectors.sec_edgar:SECEdgarCollector
-    params: {max_age: 14}
-  eu_commission:
-    enabled: true
-    module: intel.collectors.eu_commission:EUCommissionCollector
-    params: {max_age: 7}
-  arxiv_perception:
-    enabled: true
-    module: intel.collectors.arxiv_perception:ArxivPerceptionCollector
-    params: {max_age: 14}
-  adas_vehicle_intl:
-    enabled: true
-    module: intel.collectors.adas_vehicle_intl:AdasVehicleCollector
-    params: {max_age: 30}
-  eastmoney:
-    enabled: true
-    module: intel.collectors.eastmoney:EastMoneyCollector
-    params: {max_age: 7}
-  cninfo:
-    enabled: true
-    module: intel.collectors.cninfo:CninfoCollector
-    params: {max_age: 7}
-  # —— standards 服务化(D10): SAMR 标准采集,复用 standards/ 引擎 ——
-  samr:
-    enabled: true
-    module: intel.collectors.samr_standard:SamrStandardCollector
-    params: {}            # keyword/ics 缺省时用 standards_config.ini 的默认值
+# 内置源已退役(D17): 8 个 intel 源不再注册为平台内置源(intel/collectors/*.py
+# 文件保留,作测试样例/参考实现)。平台升级为「纯执行框架」,源随请求传入:
+#   - POST /v1/collect {"source": "xxx"}               → 查配置,查不到 422
+#   - POST /v1/collect {"collector": {"module": "a.b:C"}} → 模块引用
+#   - POST /v1/collect {"collector": {"code": "..."}}  → 代码内联(需开启开关)
+# 需要源仍走平台时,用 config.d 片段声明(module 指向任何已安装模块)。
+sources: {}
 
 storage:
   db_path: data/briefnexus.db   # 相对项目根;WAL 模式,API 线程与 worker 并发写

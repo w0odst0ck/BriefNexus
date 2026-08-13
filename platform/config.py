@@ -12,6 +12,7 @@
 - 外部采集器: 扫描 collectors_extra_dirs 下 *.py,以 "_platform_ext_" 前缀唯一模块名
   动态导入(避免与平台/标准库模块名冲突),外部模块可 import 同目录兄弟文件。
 """
+import ast
 import importlib
 import importlib.util
 import logging
@@ -29,6 +30,102 @@ CONFIG_ENV = "BRIEFNEXUS_PLATFORM_CONFIG"
 CONFIG_D_DIRNAME = "config.d"
 # 外部采集器模块名前缀(防污染: 与平台/标准库模块隔离)
 EXT_MODULE_PREFIX = "_platform_ext_"
+
+# ---------- 代码内联(D16/D20 安全) ----------
+# 内联代码禁导入的模块(黑名单): 涉及文件/进程/网络/序列化等危险能力。
+BLOCKED_IMPORTS = frozenset({
+    "os", "subprocess", "socket", "shutil", "sys", "pathlib",
+    "ctypes", "pickle", "multiprocessing", "threading",
+})
+# 禁直接调用的内置/魔术函数: eval/exec 可执行任意代码,compile 可绕过检查,
+# open/__import__ 可读写文件/动态导入黑名单模块。
+BLOCKED_CALLS = frozenset({"eval", "exec", "compile", "open", "__import__"})
+
+# ALLOW_INLINE_CODE 环境变量开关(默认 false): 仅限本机/受信环境开启。
+INLINE_CODE_ENV = "ALLOW_INLINE_CODE"
+
+
+def is_inline_code_enabled() -> bool:
+    """代码内联开关: ALLOW_INLINE_CODE=true/1/yes/on 时开启,默认关闭"""
+    return os.environ.get(INLINE_CODE_ENV, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def check_inline_code_ast(code: str) -> str | None:
+    """内联代码 AST 安全检查(exec 前): 命中禁止操作返回名称,通过返回 None。
+
+    检查项(D20):
+      - Import/ImportFrom 黑名单模块(取顶级包名,如 "os.path" 命中 "os")
+      - Call 直接调用 eval/exec/compile/open/__import__(含属性形式 obj.eval)
+      - 别名绑定跟踪: `x = open` 后 `x(...)` 同样拦截
+      - importlib / builtins 整体禁入(可逃逸黑名单)
+    注意: 这是受限沙箱而非完整隔离——仅拦截明确禁止项,配合 ALLOW_INLINE_CODE
+    仅本机开启的约束。别名跟踪覆盖常见绕过手法,但不保证对抗蓄意逃逸。
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        # 语法错误单独抛出(与"禁止操作"区分),调用方可转为 ValueError 422
+        raise ValueError(f"collector.code 语法错误: {e.msg}") from e
+
+    # 别名表: 名字 → 其来源(黑名单模块 / 黑名单函数名 / 未知)
+    aliases: dict[str, str] = {}
+
+    def _blocked_call_name(node) -> str | None:
+        """解析 Call 的 func: 直接名 / 属性名 / 别名,返回黑名单命中名或 None。"""
+        if isinstance(node, ast.Name):
+            name = node.id
+            if name in BLOCKED_CALLS:
+                return name
+            if aliases.get(name) in BLOCKED_CALLS:
+                return aliases[name]
+            return None
+        if isinstance(node, ast.Attribute):
+            # obj.eval / obj.exec / obj.open —— 属性名本身在黑名单即拦截
+            if node.attr in BLOCKED_CALLS:
+                return node.attr
+            # importlib.import_module / builtins.__import__ 等
+            if isinstance(node.value, ast.Name) and node.value.id in aliases:
+                src = aliases[node.value.id]
+                if src in ("importlib", "builtins"):
+                    return node.attr
+            return None
+        return None
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".", 1)[0]
+                if top in BLOCKED_IMPORTS:
+                    return top
+                if top in ("importlib", "builtins"):
+                    return top
+                if alias.asname:
+                    aliases[alias.asname] = top
+        elif isinstance(node, ast.ImportFrom):
+            top = (node.module or "").split(".", 1)[0]
+            if top in BLOCKED_IMPORTS:
+                return top
+            if top in ("importlib", "builtins"):
+                return top
+            if node.module == "builtins":
+                return "builtins"
+            for alias in node.names:
+                if alias.name in BLOCKED_CALLS:
+                    return alias.name
+                if alias.asname:
+                    aliases[alias.asname] = alias.name
+        elif isinstance(node, ast.Call):
+            name = _blocked_call_name(node.func)
+            if name:
+                return name
+        elif (isinstance(node, ast.Assign)
+              and isinstance(node.value, ast.Name)
+              and node.value.id in BLOCKED_CALLS):
+            # 记录别名绑定: x = open / x = eval 等
+            for t in [t for t in node.targets if isinstance(t, ast.Name)]:
+                aliases[t.id] = node.value.id
+    return None
+
 
 _config: dict = None  # 模块级缓存
 

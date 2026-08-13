@@ -484,3 +484,96 @@ def test_per_source_lock_serializes(sched_env):
     wait_task_status(t1)
     wait_task_status(t2)
     assert fake_collectors.LockProbeCollector._max_active == 1
+
+
+# ---------- D16/D18/D19: 源即参数(collector_spec)----------
+
+def test_inline_code_traceback_captured(sched_env):
+    """D18: 内联代码 crawl 抛异常 → failed + traceback 列含完整堆栈"""
+    import json as _json
+    code = "def crawl(sess):\n    raise ValueError('内联爆炸')\n"
+    task_id = db.create_task("inline_bad",
+                             collector_spec=_json.dumps({"code": code, "version": "v1"}))
+    final = wait_task_status(task_id)
+    assert final["status"] == "failed"
+    assert final["error"] == db.ERROR_INTERNAL
+    assert final["traceback"] and "ValueError" in final["traceback"]
+    assert "内联爆炸" in final["traceback"]
+
+
+def test_inline_function_collector_via_scheduler(sched_env):
+    """函数式内联: 包装为最小采集器,crawl 返回 dict 列表 → 落库"""
+    import json as _json
+    code = ("def crawl(sess):\n"
+            "    return [{'title': '函数式', 'url': 'https://example.com/f', 'custom': 42}]\n")
+    task_id = db.create_task("inline_fn",
+                             collector_spec=_json.dumps({"code": code, "version": "v2"}))
+    final = wait_task_status(task_id)
+    assert final["status"] == "done"
+    assert final["items_count"] == 1
+    row = db.get_items(task_id)[0]
+    assert row["title"] == "函数式"
+    assert row["raw_data"] != "{}"
+
+
+def test_inline_code_cache_reused(tmp_path, monkeypatch):
+    """D19: 同 code 两次任务 → AST 检查仅一次;collector_cache 表记录 hash;内存缓存复用"""
+    import hashlib
+    import json as _json
+    from platform import config as pconfig
+    db.init_db(str(tmp_path / "cache.db"))
+    code = ("def crawl(sess):\n"
+            "    return [{'title': '缓存复用', 'url': 'https://example.com/c'}]\n")
+    calls = {"n": 0}
+    orig = pconfig.check_inline_code_ast
+
+    def counting(c):
+        calls["n"] += 1
+        return orig(c)
+
+    monkeypatch.setattr(pconfig, "check_inline_code_ast", counting)
+    sched = Scheduler(max_workers=2, task_timeout_s=300,
+                      poll_interval=0.05, retry_delays=(0.1, 0.1, 0.1))
+    sched.start()
+    try:
+        spec = _json.dumps({"code": code, "version": "v3"})
+        t1 = db.create_task("inline_cache_1", collector_spec=spec)
+        wait_task_status(t1)
+        t2 = db.create_task("inline_cache_2", collector_spec=spec)
+        wait_task_status(t2)
+        assert db.get_task(t1)["status"] == "done"
+        assert db.get_task(t2)["status"] == "done"
+        # 第一次: 内存 miss + db miss → 检查 1 次;第二次: 内存缓存命中 → 不再检查
+        assert calls["n"] == 1
+        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        cached = db.get_collector_cache(code_hash)
+        assert cached is not None and cached["code"] == code
+    finally:
+        sched.stop()
+        db.reset_db()
+
+
+def test_to_platform_item_dict_and_newitem():
+    """dict 形式(内联 crawl 契约)与 NewsItem 形式统一转换"""
+    import json as _json
+    from platform.scheduler import to_platform_item
+
+    from intel.core.base import NewsItem
+    # dict: 标准字段直取,自定义字段进 raw_data,date_str 可来自 date
+    row = to_platform_item(
+        {"title": "T", "url": "https://e/1", "summary": "S", "custom": 123, "date": "2026-08-01"},
+        "src")
+    assert row["title"] == "T"
+    assert row["url"] == "https://e/1"
+    assert row["summary"] == "S"
+    assert row["type"] == "news"
+    assert row["date_str"] == "2026-08-01"
+    assert _json.loads(row["raw_data"]) == {"custom": 123}
+    # 缺 url 不崩溃(契约要求 url,但宽松兜底)
+    row2 = to_platform_item({"title": "仅标题"}, "src")
+    assert row2["url"] == ""
+    # NewsItem 路径不变
+    ni = NewsItem(title="N", url="https://e/2")
+    row3 = to_platform_item(ni, "src")
+    assert row3["title"] == "N"
+    assert row3["url"] == "https://e/2"

@@ -8,12 +8,18 @@
   - 超时 300s 强制 failed(error=network);失败自动重试 3 次,退避 5s/10s/20s
   - 取消: pending/running 可取消;running 通过线程内标志位软中止(不强制 kill)
 """
+import contextlib
+import hashlib
 import inspect
+import io
 import json
 import logging
 import random
+import sys
 import threading
 import time
+import traceback
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from platform import config, db
@@ -71,13 +77,32 @@ def classify_error(exc: Exception) -> str:
 
 
 def to_platform_item(item, source_name: str) -> dict:
-    """intel NewsItem → 平台落库 dict(NewsItem 泛化透传)
+    """intel NewsItem / dict → 平台落库 dict(NewsItem 泛化透传)
 
-    - 标准字段直取; date_str 取 NewsItem.date(YYYY-MM-DD)
+    - 标准字段直取; date_str 取 NewsItem.date(YYYY-MM-DD) 或 dict 的 date_str/date
     - type 默认 'news'; 采集器若自带 type/raw_data 则透传
     - 采集器附加的未声明字段塞入 raw_data(结构化负载双保险)
+    - dict 形式(内联 crawl 函数契约: title/url 必填,其余可选)同语义转换
     """
     standard = {"title", "url", "summary", "source", "domain", "sector", "date_obj", "raw_data"}
+    if isinstance(item, dict):
+        raw = dict(item.get("raw_data") or {})
+        for k, v in item.items():
+            if k in standard or k in ("type", "date_str", "date"):
+                continue
+            raw[k] = v
+        return {
+            "dedup_key": db.make_dedup_key(source_name, item.get("title", "") or ""),
+            "title": item.get("title", "") or "",
+            "url": item.get("url", "") or "",
+            "summary": item.get("summary", "") or "",
+            "source": item.get("source", "") or "",
+            "domain": item.get("domain", "") or "",
+            "sector": item.get("sector", "") or "",
+            "type": item.get("type", "news") or "news",
+            "date_str": item.get("date_str") or item.get("date", "") or "",
+            "raw_data": _json_dumps(raw),
+        }
     raw = dict(getattr(item, "raw_data", None) or {})
     for k, v in vars(item).items():
         if k in standard or k == "type":
@@ -103,6 +128,193 @@ def _json_dumps(obj) -> str:
         return json.dumps(obj, ensure_ascii=False, default=str)
     except Exception:
         return "{}"
+
+
+# ---------- 内联代码执行(D16/D19/D20) ----------
+
+class InlineCodeBlocked(Exception):
+    """内联代码命中 AST 安全检查禁止项"""
+
+
+class _InlineFunctionCollector:
+    """函数式内联代码的最小采集器包装: 暴露 crawl(sess) 契约
+
+    不继承 BaseCollector(避免 __init__ 签名约束),仅转发 crawl 调用。
+    """
+
+    def __init__(self, crawl_fn):
+        self._crawl_fn = crawl_fn
+
+    def crawl(self, sess):
+        return self._crawl_fn(sess)
+
+
+class InlineCodeRuntime:
+    """内联代码执行沙箱: AST 检查 → 受限命名空间 exec → 缓存复用。
+
+    缓存链(D19): 进程内内存 dict(hash → 命名空间)→ collector_cache 表
+    (hash 已通过检查)→ 全新 AST 检查 + 编译。不持久化编译对象(pickle code
+    对象复杂),内存缓存进程重启失效可接受。
+    """
+
+    # 注入命名空间的常用模块(尽力注入,缺依赖静默跳过)
+    INLINE_MODULES = ("requests", "bs4", "json", "re", "time", "datetime", "logging")
+
+    def __init__(self):
+        # LRU 缓存: 容量上限 128,防长时间运行内存无限增长(性能 low 修复)
+        self._mem_cache: dict = OrderedDict()
+        self._mem_cache_max = 128
+        self._building: dict = {}   # code_hash → 构建锁(并发同 code 只构建一次)
+        self._guard = threading.Lock()
+
+    def _cache_get(self, key: str):
+        val = self._mem_cache.get(key)
+        if val is not None:
+            self._mem_cache.move_to_end(key)
+        return val
+
+    def _cache_put(self, key: str, val):
+        self._mem_cache[key] = val
+        self._mem_cache.move_to_end(key)
+        while len(self._mem_cache) > self._mem_cache_max:
+            self._mem_cache.popitem(last=False)
+
+    def load(self, code: str) -> dict:
+        """编译并执行内联代码,返回命名空间;同 hash 复用缓存。
+
+        Raises:
+            InlineCodeBlocked: AST 检查命中禁止项
+            ValueError: 语法错误
+        """
+        code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+        # 锁外快速路径: 内存缓存命中直接返回
+        with self._guard:
+            ns = self._cache_get(code_hash)
+            if ns is not None:
+                return ns
+        # per-hash 构建锁: 同 code 并发任务只构建一次,第二个等完成后再取缓存
+        with self._guard:
+            build_lock = self._building.get(code_hash)
+            if build_lock is None:
+                build_lock = self._building[code_hash] = threading.Lock()
+        with build_lock:
+            # 持构建锁期间可能已被其他线程构建完成 → 再查一次缓存
+            with self._guard:
+                ns = self._cache_get(code_hash)
+                if ns is not None:
+                    return ns
+            # 锁外构建(compile/exec/DB 可能耗时,不占全局锁阻塞其他内联采集器)
+            if db.get_collector_cache(code_hash) is None:
+                bad = config.check_inline_code_ast(code)
+                if bad:
+                    raise InlineCodeBlocked(bad)
+            ns = self._build_namespace()
+            try:
+                code_obj = compile(code, "<collector>", "exec")
+            except SyntaxError as e:
+                raise ValueError(f"collector.code 语法错误: {e.msg}") from e
+            # 受限命名空间 exec 是任务书 D16 明确的执行方式: 已通过 AST 安全检查
+            # (黑名单导入/危险调用拦截)+ ALLOW_INLINE_CODE 开关,见 config.check_inline_code_ast。
+            try:
+                exec(code_obj, ns)  # noqa: S102
+            except Exception as e:
+                # 顶层代码异常(如裸 raise)转 ValueError,调用方 422 而非 500
+                raise ValueError(f"collector.code 顶层执行异常: {type(e).__name__}: {e}") from e
+            # 锁内插入缓存
+            with self._guard:
+                self._cache_put(code_hash, ns)
+            db.upsert_collector_cache(code_hash, code)
+        return ns
+
+    @staticmethod
+    def _build_namespace() -> dict:
+        """受限命名空间: 剥离危险 builtins,注入常用模块 + intel 基类 + stderr 写入
+
+        安全(D20 增强): 不直接暴露 __builtins__ 全量——剥离 eval/exec/compile/open/
+        __import__/input 等逃逸向量,防 getattr(__builtins__, '__import__')('os') 绕过。
+        """
+        # 基于真实 builtins 构造受限副本(保留常用,剥离危险)
+        safe_builtins = dict(__builtins__.__dict__ if hasattr(__builtins__, "__dict__")
+                             else __builtins__)
+        for name in ("eval", "exec", "compile", "open", "input",
+                     "breakpoint", "memoryview", "staticmethod", "classmethod"):
+            safe_builtins.pop(name, None)
+        # 受限 __import__: 只允许白名单模块(与 INLINE_MODULES 对齐),其余拒绝
+        _allowed = set(InlineCodeRuntime.INLINE_MODULES) | {"intel"}
+
+        def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+            top = name.split(".", 1)[0]
+            if top not in _allowed:
+                raise ImportError(f"collector.code 禁止导入模块: {name}")
+            return __import__(name, globals, locals, fromlist, level)
+
+        safe_builtins["__import__"] = _safe_import
+        ns = {"__builtins__": safe_builtins}
+
+        def stderr_write(msg: str):
+            """向 stderr 写日志(运行时动态查 sys.stderr,配合 redirect_stderr 捕获)
+
+            不注入 sys 模块本身(黑名单),仅提供写通道供采集器输出日志。
+            """
+            sys.stderr.write(str(msg))
+
+        ns["stderr_write"] = stderr_write
+        for mod_name in InlineCodeRuntime.INLINE_MODULES:
+            try:
+                ns[mod_name] = __import__(mod_name)
+            except Exception:  # noqa: S110 — 可选依赖缺失/损坏静默跳过,不阻塞采集
+                pass  # 缺依赖/依赖损坏不阻塞(如 bs4 未安装)
+        try:
+            from intel.core.base import BaseCollector, NewsItem
+            ns.update({"BaseCollector": BaseCollector, "NewsItem": NewsItem})
+        except ImportError:
+            pass  # intel 不可用时类式写法将无法定义,由 resolve 阶段报错
+        return ns
+
+
+# 模块级单例: 提交阶段(检测 Collector/crawl)与 worker 执行共用同一缓存
+_inline_runtime = InlineCodeRuntime()
+
+
+def resolve_inline_collector(code: str):
+    """解析内联代码中的采集器(D16/D21): 返回 (collector_cls_or_callable, source_name)
+
+    - 契约: 先看 class Collector(BaseCollector),再看 def crawl(sess) -> list[dict]
+    - 都没有 → ValueError(调用方转 422)
+    - source_name: 类式取类属性(空则 code hash 前 8 位);函数式 code hash 前 8 位
+    """
+    ns = _inline_runtime.load(code)
+    collector_cls = ns.get("Collector")
+    crawl_fn = ns.get("crawl")
+    code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+    if inspect.isclass(collector_cls):
+        name = getattr(collector_cls, "source_name", "") or code_hash[:8]
+        return collector_cls, name
+    if callable(crawl_fn):
+        return crawl_fn, code_hash[:8]
+    raise ValueError("collector.code 必须定义 class Collector(BaseCollector) 或 def crawl(sess)")
+
+
+def parse_collector_spec(raw) -> dict | None:
+    """任务 collector_spec 列(JSON 字符串)→ dict;空/损坏返回 None
+
+    公共 API: 供 app.py / 外部消费方解析任务里的源规格。
+    """
+    if not raw:
+        return None
+    try:
+        spec = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return spec if isinstance(spec, dict) else None
+
+
+def instantiate_class(cls, params: dict):
+    """按构造函数签名过滤参数后实例化(宽松模式防 TypeError)"""
+    sig = inspect.signature(cls.__init__)
+    accepted = set(sig.parameters) - {"self"}
+    filtered = {k: v for k, v in params.items() if k in accepted}
+    return cls(**filtered)
 
 
 class Scheduler:
@@ -177,13 +389,14 @@ class Scheduler:
         return True
 
     def retry_task(self, task_id: str) -> bool:
-        """API retry: 仅 failed 可重跑;重置 pending 并清空旧结果/重试计数"""
+        """API retry: 仅 failed 可重跑;重置 pending 并清空旧结果/重试计数/堆栈"""
         task = db.get_task(task_id)
         if not task or task["status"] != db.STATUS_FAILED:
             return False
         db.clear_items(task_id)
         db.update_task(task_id, status=db.STATUS_PENDING, error=None,
-                       finished_at=None, items_count=0, retries=0)
+                       finished_at=None, items_count=0, retries=0,
+                       traceback=None, collector_log=None)
         self._drop_retry(task_id)
         return True
 
@@ -280,15 +493,21 @@ class Scheduler:
             collector = self._instantiate(task)
         except Exception as e:
             logger.error("任务 %s 采集器实例化失败: %s", task_id, e)
-            self._fail(task_id, classify_error(e))
+            self._fail(task_id, classify_error(e), traceback_text=traceback.format_exc())
             return
 
         items = []
+        # D18: 捕获采集器 stderr 输出(collector_log),异常时一并入库
+        stderr_buf = io.StringIO()
+        log = None
         try:
-            items = collector.crawl(new_session())
+            with contextlib.redirect_stderr(stderr_buf):
+                items = collector.crawl(new_session())
+            log = stderr_buf.getvalue().strip() or None
         except Exception as e:
             logger.error("任务 %s 采集失败: %s", task_id, e)
-            self._fail(task_id, classify_error(e))
+            self._fail(task_id, classify_error(e), traceback_text=traceback.format_exc(),
+                       collector_log=stderr_buf.getvalue().strip() or None)
             return
 
         if self._is_cancelled(task_id):
@@ -314,26 +533,54 @@ class Scheduler:
 
         if self._is_cancelled(task_id):
             return  # 保持 cancelled 状态,不再更新
-        db.update_task(task_id, status=db.STATUS_DONE, items_count=saved, finished_at=db._now())
+        # 成功时清空历史失败残留的 traceback;collector_log 保留本次采集的 stderr 输出
+        db.update_task(task_id, status=db.STATUS_DONE, items_count=saved, finished_at=db._now(),
+                       traceback=None, collector_log=log)
         logger.info("任务 %s done: %d 条", task_id, saved)
 
     def _instantiate(self, task: dict):
-        """实例化采集器: 配置默认 params 与任务 params 合并后传给构造函数
+        """实例化采集器: 按 collector_spec 分派(module 引用 / code 内联 / 配置内置源)
 
-        宽松模式可能传入构造函数不认识的参数,按签名过滤避免 TypeError。
+        - collector_spec 有 "code" → 内联代码(缓存编译,取 Collector 类或 crawl 函数)
+        - collector_spec 有 "module" → 复用 config.resolve_collector_class 动态 import
+        - 无 collector_spec(旧任务)→ 查配置源,查不到报「源未注册」
+        参数: 任务 params(JSON)与配置默认 params 合并,按构造函数签名过滤防 TypeError。
         """
+        spec = parse_collector_spec(task.get("collector_spec"))
+        task_params = json.loads(task["params"]) if task.get("params") else {}
+        if spec is not None and "code" in spec:
+            return self._instantiate_inline(spec, task_params)
+        if spec is not None and "module" in spec:
+            cls = config.resolve_collector_class(spec["module"])
+            return instantiate_class(cls, task_params)
+        # 旧任务(无 collector_spec): 走配置内置源
         cfg = config.get_sources_config().get(task["source"], {})
+        if not cfg or not cfg.get("enabled", True):
+            raise ValueError(f"源未注册: {task['source']}，请用 collector 字段传入")
         cls = config.resolve_collector_class(cfg["module"])
         params = dict(cfg.get("params") or {})
-        task_params = json.loads(task["params"]) if task["params"] else {}
         params.update(task_params or {})
-        sig = inspect.signature(cls.__init__)
-        accepted = set(sig.parameters) - {"self"}
-        filtered = {k: v for k, v in params.items() if k in accepted}
-        return cls(**filtered)
+        return instantiate_class(cls, params)
 
-    def _fail(self, task_id: str, error: str, ignore_cancel: bool = False):
-        """任务失败: 更新状态;未达重试上限则置回 pending 并安排退避
+    def _instantiate_inline(self, spec: dict, params: dict):
+        """内联代码采集器实例化: 类式走 BaseCollector 签名过滤;函数式包装最小采集器"""
+        code = spec.get("code") or ""
+        ns = _inline_runtime.load(code)
+        collector_cls = ns.get("Collector")
+        crawl_fn = ns.get("crawl")
+        if inspect.isclass(collector_cls):
+            # 校验必须是 BaseCollector 子类(或提供 crawl 方法),避免任意类被当采集器实例化
+            from intel.core.base import BaseCollector
+            if issubclass(collector_cls, BaseCollector) or callable(getattr(collector_cls, "crawl", None)):
+                return instantiate_class(collector_cls, params)
+            raise ValueError("collector.code 的 class Collector 必须继承 BaseCollector 或实现 crawl()")
+        if callable(crawl_fn):
+            return _InlineFunctionCollector(crawl_fn)
+        raise ValueError("collector.code 必须定义 class Collector(BaseCollector) 或 def crawl(sess)")
+
+    def _fail(self, task_id: str, error: str, ignore_cancel: bool = False,
+              traceback_text: str | None = None, collector_log: str | None = None):
+        """任务失败: 更新状态(含 D18 traceback/collector_log);未达重试上限则置回 pending 并安排退避
 
         ignore_cancel=True 用于超时场景(已设软中止标志但仍需走重试)。
         """
@@ -346,13 +593,16 @@ class Scheduler:
         if retries < len(self.retry_delays):
             delay = self.retry_delays[retries]
             db.update_task(task_id, status=db.STATUS_PENDING, error=error,
-                           finished_at=db._now(), retries=retries + 1)
+                           finished_at=db._now(), retries=retries + 1,
+                           traceback=traceback_text, collector_log=collector_log)
             with self._mem_guard:
                 self._retry_after[task_id] = time.time() + delay
             logger.warning("任务 %s 失败(%s),第 %d 次重试,退避 %ds",
                            task_id, error, retries + 1, delay)
         else:
-            db.update_task(task_id, status=db.STATUS_FAILED, error=error, finished_at=db._now())
+            db.update_task(task_id, status=db.STATUS_FAILED, error=error,
+                           finished_at=db._now(), traceback=traceback_text,
+                           collector_log=collector_log)
             logger.error("任务 %s 失败(%s),重试耗尽,终态 failed", task_id, error)
 
     # ---------- 内部辅助 ----------

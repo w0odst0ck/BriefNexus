@@ -109,3 +109,16 @@ class LockProbeCollector(BaseCollector):
             with type(self)._guard:
                 type(self)._active -= 1
         return [NewsItem(title="并发探针", url="https://example.com/probe", source=self.display_name)]
+
+
+class ModuleExtCollector(BaseCollector):
+    """随请求 collector.module 引用提交的采集器(D16):
+
+    不入配置(非内置源),source_name 唯一 → /sources 动态发现可见。
+    """
+    source_name = "module_ext"
+    display_name = "Module Ext Source"
+
+    def crawl(self, sess):
+        return [NewsItem(title="模块引用", url="https://example.com/module_ext",
+                         source=self.source_name)]
