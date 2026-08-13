@@ -1,0 +1,4 @@
+# 平台模块内缓存(不入库)
+__pycache__/
+.ruff_cache/
+.pytest_cache/

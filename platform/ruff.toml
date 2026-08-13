@@ -1,0 +1,4 @@
+# platform 模块 lint 配置
+# BLE001: 调度/采集边界必须盲捕 Exception——采集器(第三方代码)可能抛任意异常,平台需兜底分类
+# RUF012: 测试采集器故意用可变类属性(PARAM_SCHEMA 声明 / 并发探针计数)
+lint.ignore = ["BLE001", "RUF012"]

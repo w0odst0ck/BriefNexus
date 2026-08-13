@@ -1,0 +1,48 @@
+# BriefNexus 通用采集平台 — 平台配置(统一入口)
+# 现有 intel/sources.yaml 保留向后兼容(CLI 继续可用),平台只认本文件。
+
+server:
+  host: 127.0.0.1
+  port: 9000
+  max_workers: 2            # 采集并发线程数(避免打爆反爬目标)
+  task_timeout_s: 300       # 单任务超时,超时强制 failed(error=network)
+
+sources:
+  # —— 透出 intel 现有 8 源(enabled=true)——
+  # module 字段: 模块路径:类名,动态 import(不依赖注册表,保留注册表兼容)
+  white_house:
+    enabled: true
+    module: intel.collectors.white_house:WhiteHouseCollector
+    params: {max_age: 7}
+  nvidia:
+    enabled: true
+    module: intel.collectors.nvidia_blog:NvidiaBlogCollector
+    params: {max_age: 7}
+  sec_edgar:
+    enabled: true
+    module: intel.collectors.sec_edgar:SECEdgarCollector
+    params: {max_age: 14}
+  eu_commission:
+    enabled: true
+    module: intel.collectors.eu_commission:EUCommissionCollector
+    params: {max_age: 7}
+  arxiv_perception:
+    enabled: true
+    module: intel.collectors.arxiv_perception:ArxivPerceptionCollector
+    params: {max_age: 14}
+  adas_vehicle_intl:
+    enabled: true
+    module: intel.collectors.adas_vehicle_intl:AdasVehicleCollector
+    params: {max_age: 30}
+  eastmoney:
+    enabled: true
+    module: intel.collectors.eastmoney:EastMoneyCollector
+    params: {max_age: 7}
+  cninfo:
+    enabled: true
+    module: intel.collectors.cninfo:CninfoCollector
+    params: {max_age: 7}
+
+storage:
+  db_path: data/briefnexus.db   # 相对项目根;WAL 模式,API 线程与 worker 并发写
+  dedup_ttl_days: 90            # 去重键保留天数(预留,供后续清理任务使用)
