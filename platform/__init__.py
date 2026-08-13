@@ -1,4 +1,5 @@
 """BriefNexus 通用采集平台 — HTTP API + 异步任务调度。
 
-对外暴露采集能力(复用 intel/ 现有采集器),供 Mojin RAG / trade-pulse / SceneCraft 等多项目复用。
+对外暴露采集能力（复用 intel/ 现有采集器），供任意消费方通过 HTTP 接口复用。
+采集内核与平台服务层三层隔离，新采集器即插即用，平台零改动。
 """
