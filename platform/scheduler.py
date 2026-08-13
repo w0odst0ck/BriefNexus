@@ -15,6 +15,7 @@ import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from platform import config, db
 
 import requests
@@ -108,11 +109,16 @@ class Scheduler:
     """后台任务调度器 — start() 后单线程轮询 + 线程池执行"""
 
     def __init__(self, max_workers: int = 2, task_timeout_s: int = 300,
-                 poll_interval: float = 1.0, retry_delays=None):
+                 poll_interval: float = 1.0, retry_delays=None,
+                 cleanup_consumed_ttl_days: int = 90, cleanup_task_archive_days: int = 30):
         self.max_workers = max_workers
         self.task_timeout_s = task_timeout_s
         self.poll_interval = poll_interval
         self.retry_delays = tuple(retry_delays or RETRY_DELAYS)
+        # 每日清理(D13)参数与上次清理日期(重启后当天不再重复执行)
+        self.cleanup_consumed_ttl_days = cleanup_consumed_ttl_days
+        self.cleanup_task_archive_days = cleanup_task_archive_days
+        self._last_cleanup_date = None
 
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="platform-collect")
         self._stop = threading.Event()
@@ -190,9 +196,33 @@ class Scheduler:
             try:
                 self._enforce_timeouts()
                 self._dispatch()
+                self._maybe_cleanup()
             except Exception as e:
                 logger.error("worker 主循环异常: %s", e)
             self._stop.wait(self.poll_interval)
+
+    # ---------- 每日清理(D13) ----------
+
+    def _maybe_cleanup(self, today: datetime | None = None) -> dict | None:
+        """每日执行一次数据清理: 已消费过期 items 删除 + 终态超期任务归档。
+
+        last_cleanup_date 记录执行日期,重启后当天不再重复执行(任务书要求)。
+        无论成败都记录日期,失败次日再试(避免主循环每秒重试刷错误日志)。
+        Returns:
+            本次实际执行返回 {"items_deleted", "tasks_archived"};当天已执行返回 None。
+        """
+        today = today or datetime.now(db.CST).date()
+        if today == self._last_cleanup_date:
+            return None
+        self._last_cleanup_date = today  # 先记录,防主循环高频重试
+        try:
+            stats = db.cleanup(self.cleanup_consumed_ttl_days, self.cleanup_task_archive_days)
+            if stats["items_deleted"] or stats["tasks_archived"]:
+                logger.info("每日清理完成: %s", stats)
+            return stats
+        except Exception as e:
+            logger.error("每日清理失败: %s", e)
+            return None
 
     def _dispatch(self):
         """领取 pending 任务: 每源锁非阻塞获取 → 置 running → 交线程池执行"""

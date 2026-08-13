@@ -7,6 +7,12 @@ server:
   max_workers: 2            # 采集并发线程数(避免打爆反爬目标)
   task_timeout_s: 300       # 单任务超时,超时强制 failed(error=network)
 
+# 外部采集器目录(可选,可多个): 业务项目自维护的适配器目录,平台仓零改动。
+# 启动时扫描目录下 *.py 并以 "_platform_ext_" 前缀模块名挂载(见 config.py)。
+# 外部源通过 config.d 片段声明(见 config.d/README.md)。
+collectors_extra_dirs:
+#  - /path/to/external/collectors
+
 sources:
   # —— 透出 intel 现有 8 源(enabled=true)——
   # module 字段: 模块路径:类名,动态 import(不依赖注册表,保留注册表兼容)
@@ -42,7 +48,14 @@ sources:
     enabled: true
     module: intel.collectors.cninfo:CninfoCollector
     params: {max_age: 7}
+  # —— standards 服务化(D10): SAMR 标准采集,复用 standards/ 引擎 ——
+  samr:
+    enabled: true
+    module: intel.collectors.samr_standard:SamrStandardCollector
+    params: {}            # keyword/ics 缺省时用 standards_config.ini 的默认值
 
 storage:
   db_path: data/briefnexus.db   # 相对项目根;WAL 模式,API 线程与 worker 并发写
   dedup_ttl_days: 90            # 去重键保留天数(预留,供后续清理任务使用)
+  # consumed_ttl_days: 90       # 每日清理(D13): 已消费 items 保留天数,超期删除
+  # task_archive_days: 30       # 每日清理(D13): 终态任务归档天数,超期归档(含其 items)

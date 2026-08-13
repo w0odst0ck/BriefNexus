@@ -98,10 +98,11 @@ def test_task_status_shape(client):
     task = wait_api_task(client, task_id)
     # 响应字段齐全且不含 items
     assert set(task.keys()) == {"task_id", "status", "source", "created_at",
-                                "finished_at", "error", "items_count"}
+                                "finished_at", "error", "items_count", "archived"}
     assert task["task_id"] == task_id
     assert task["source"] == "ok"
     assert task["created_at"]
+    assert task["archived"] is False
 
 
 # ---------- GET /tasks/{id}/items(分页 + consume)----------
@@ -246,3 +247,109 @@ def test_collect_sync_failed_source(client):
     assert body["status"] == "failed"
     assert body["items"] == []
     assert body["items_count"] == 0
+
+
+# ---------- /v1 版本化路由(D14) ----------
+
+def test_v1_healthz(client):
+    r = client.get("/v1/healthz")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+
+def test_v1_collect_async_ok(client):
+    r = client.post("/v1/collect", json={"source": "ok", "params": {"max_age": 7}})
+    assert r.status_code == 201
+    task_id = r.json()["task_id"]
+    task = wait_api_task(client, task_id)
+    assert task["status"] == "done"
+    assert task["items_count"] == 3
+
+
+def test_v1_collect_sync_ok(client):
+    r = client.post("/v1/collect/sync", json={"source": "ok"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "done"
+    assert body["items_count"] == 3
+    assert len(body["items"]) == 3
+
+
+def test_v1_task_lifecycle_and_items(client):
+    task_id = client.post("/v1/collect", json={"source": "ok"}).json()["task_id"]
+    task = wait_api_task(client, task_id)
+    assert task["status"] == "done"
+    # /v1/tasks/{id} 状态
+    r = client.get(f"/v1/tasks/{task_id}")
+    assert r.status_code == 200
+    assert r.json()["status"] == "done"
+    # /v1/tasks/{id}/items 分页拉取
+    r = client.get(f"/v1/tasks/{task_id}/items")
+    assert r.status_code == 200
+    assert len(r.json()["items"]) == 3
+    # /v1/tasks/{id}/cancel + retry 路由存在且语义正确
+    assert client.post(f"/v1/tasks/{task_id}/cancel").status_code == 409  # done 不可取消
+    assert client.post(f"/v1/tasks/{task_id}/retry").status_code == 409   # done 不可重试
+
+
+def test_v1_sources_list(client):
+    r = client.get("/v1/sources")
+    assert r.status_code == 200
+    sources = {s["name"]: s for s in r.json()}
+    assert "ok" in sources and "loose" in sources
+    assert sources["ok"]["display_name"] == "OK Source"
+
+
+def test_legacy_paths_compat(client):
+    """D14 旧无前缀路径保持可用(同 handler 并存,不跳转)"""
+    assert client.get("/healthz").status_code == 200
+    assert client.get("/sources").status_code == 200
+    r = client.post("/collect", json={"source": "ok"})
+    assert r.status_code == 201
+    task = wait_api_task(client, r.json()["task_id"])
+    assert task["status"] == "done"
+    r = client.post("/collect/sync", json={"source": "ok"})
+    assert r.status_code == 200
+    task_id = r.json()["task_id"]
+    assert client.get(f"/tasks/{task_id}").status_code == 200
+    assert client.get(f"/tasks/{task_id}/items").status_code == 200
+
+
+# ---------- samr 标准源(D10) ----------
+
+def test_collect_samr_via_api(client, monkeypatch):
+    """POST /v1/collect {"source":"samr"} → done,items 为标准条目(type=standard)"""
+    from platform import config as pconfig
+
+    import standards.crawler.platforms.samr as samr_mod
+
+    def fake_collect(self, keywords, ics_codes, max_pages):
+        return [{
+            "title": "GB/T 12345-2023 示例标准",
+            "standard_no": "GB/T 12345-2023",
+            "url": "https://std.samr.gov.cn/gb/search/gbDetailed?id=x",
+            "status": "现行",
+            "publish_date": "2023-06-01",
+            "category": "国标",
+            "ics_code": "29.140.40",
+            "publisher": "国家市场监督管理总局",
+            "summary": "示例摘要",
+            "source": "samr",
+        }]
+    monkeypatch.setattr(samr_mod.SamrCollector, "collect", fake_collect)
+    # 向已注入的测试配置动态注册 samr 源(复用真实适配器类)
+    pconfig.get_config()["sources"]["samr"] = {
+        "enabled": True,
+        "module": "intel.collectors.samr_standard:SamrStandardCollector",
+        "params": {},
+    }
+    r = client.post("/v1/collect", json={"source": "samr"})
+    assert r.status_code == 201
+    task = wait_api_task(client, r.json()["task_id"])
+    assert task["status"] == "done"
+    assert task["items_count"] == 1
+    items = client.get(f"/v1/tasks/{task['task_id']}/items").json()["items"]
+    assert items[0]["type"] == "standard"
+    assert items[0]["raw_data"]["standard_no"] == "GB/T 12345-2023"
+    assert items[0]["raw_data"]["ics_code"] == "29.140.40"
+    assert items[0]["raw_data"]["category"] == "国标"

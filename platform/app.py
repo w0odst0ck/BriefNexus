@@ -5,15 +5,15 @@ FastAPI 入口 — BriefNexus 通用采集平台 HTTP API
   uvicorn platform.app:app          # 默认 host/port 来自 platform_config.yaml
   python -m platform.app
 
-接口(严格按选型书 3.1):
-  POST   /collect               提交异步任务 → 201 {task_id}
-  POST   /collect/sync          同步执行小任务(<30s)
-  GET    /tasks/{id}            任务状态(不含 items)
-  GET    /tasks/{id}/items      分页拉取结果(?offset=&limit=&consume=)
-  POST   /tasks/{id}/cancel     取消(pending/running)
-  POST   /tasks/{id}/retry      失败任务重跑 → pending
-  GET    /sources               列出启用源
-  GET    /healthz               健康检查(db + worker 心跳)
+接口(严格按选型书 3.1;D14 起路由加 /v1 前缀,旧无前缀路径保留兼容,同 handler 并存):
+  POST   /v1/collect            提交异步任务 → 201 {task_id}(旧路径 /collect 兼容)
+  POST   /v1/collect/sync       同步执行小任务(<30s)
+  GET    /v1/tasks/{id}         任务状态(不含 items)
+  GET    /v1/tasks/{id}/items   分页拉取结果(?offset=&limit=&consume=)
+  POST   /v1/tasks/{id}/cancel  取消(pending/running)
+  POST   /v1/tasks/{id}/retry   失败任务重跑 → pending
+  GET    /v1/sources            列出启用源
+  GET    /v1/healthz            健康检查(db + worker 心跳)
 """
 import json
 import logging
@@ -33,7 +33,7 @@ load_project_env()
 from platform import config, db, scheduler
 from platform.scheduler import Scheduler
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 
 logger = logging.getLogger("platform.api")
@@ -112,7 +112,7 @@ def item_to_api(row: dict) -> dict:
 
 
 def task_to_api(task: dict) -> dict:
-    """tasks 行 → API 响应(不含 items)"""
+    """tasks 行 → API 响应(不含 items;archived=1 表示已归档,结果已被清理)"""
     return {
         "task_id": task["id"],
         "status": task["status"],
@@ -121,6 +121,7 @@ def task_to_api(task: dict) -> dict:
         "finished_at": task["finished_at"],
         "error": task["error"],
         "items_count": task["items_count"],
+        "archived": bool(task.get("archived", 0)),
     }
 
 
@@ -138,10 +139,14 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     else:
         config.load_config()
     server = config.get_server_config()
+    storage_cfg = config.get_storage_config()
 
     opts = dict(scheduler_opts or {})
     opts.setdefault("max_workers", server["max_workers"])
     opts.setdefault("task_timeout_s", server["task_timeout_s"])
+    # 每日清理参数来自 storage 配置(D13)
+    opts.setdefault("cleanup_consumed_ttl_days", storage_cfg["consumed_ttl_days"])
+    opts.setdefault("cleanup_task_archive_days", storage_cfg["task_archive_days"])
     sched = Scheduler(**opts)
 
     @asynccontextmanager
@@ -156,6 +161,9 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
 
     app = FastAPI(title="BriefNexus 通用采集平台", version="0.1.0", lifespan=_lifespan)
     app.state.scheduler = sched
+
+    # 路由统一挂到 router: 每个端点同时注册 /v1/* 与旧无前缀路径(D14 兼容,同 handler 并存)
+    router = APIRouter()
 
     def _submit_task(req: CollectRequest) -> str:
         """校验 source + params → 创建 pending 任务,返回 task_id"""
@@ -172,13 +180,15 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
             raise HTTPException(status_code=422, detail=err)
         return db.create_task(req.source, req.params or {}, req.domain, req.callback_url)
 
-    @app.post("/collect", status_code=201)
+    @router.post("/collect", status_code=201)
+    @router.post("/v1/collect", status_code=201)
     def collect(req: CollectRequest):
         """提交异步采集任务"""
         task_id = _submit_task(req)
         return {"task_id": task_id}
 
-    @app.post("/collect/sync")
+    @router.post("/collect/sync")
+    @router.post("/v1/collect/sync")
     def collect_sync(req: CollectRequest):
         """同步执行小任务(<30s): 阻塞等待终态后直接返回结果"""
         task_id = _submit_task(req)
@@ -194,7 +204,8 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
                         "items": items, "items_count": task["items_count"]}
             time.sleep(0.2)
 
-    @app.get("/tasks/{task_id}")
+    @router.get("/tasks/{task_id}")
+    @router.get("/v1/tasks/{task_id}")
     def get_task(task_id: str):
         """任务状态(不含 items,结果走 /items 分页)"""
         task = db.get_task(task_id)
@@ -202,7 +213,8 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
             raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
         return task_to_api(task)
 
-    @app.get("/tasks/{task_id}/items")
+    @router.get("/tasks/{task_id}/items")
+    @router.get("/v1/tasks/{task_id}/items")
     def get_task_items(task_id: str, offset: int = 0, limit: int = 50, consume: int = 0):
         """分页拉取结果;consume=1 时返回后标记 consumed,下次拉取跳过"""
         if not db.get_task(task_id):
@@ -219,7 +231,8 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
             "has_more": offset + len(rows) < total,
         }
 
-    @app.post("/tasks/{task_id}/cancel")
+    @router.post("/tasks/{task_id}/cancel")
+    @router.post("/v1/tasks/{task_id}/cancel")
     def cancel_task(task_id: str):
         """取消任务(pending/running 可取消)"""
         task = db.get_task(task_id)
@@ -230,7 +243,8 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
                                 detail=f"task not cancellable in status: {task['status']}")
         return {"status": db.STATUS_CANCELLED}
 
-    @app.post("/tasks/{task_id}/retry")
+    @router.post("/tasks/{task_id}/retry")
+    @router.post("/v1/tasks/{task_id}/retry")
     def retry_task(task_id: str):
         """失败任务重跑 → 重置 pending"""
         task = db.get_task(task_id)
@@ -241,7 +255,8 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
                                 detail=f"only failed task can be retried, current: {task['status']}")
         return {"status": db.STATUS_PENDING}
 
-    @app.get("/sources")
+    @router.get("/sources")
+    @router.get("/v1/sources")
     def list_sources():
         """列出启用源(name/display_name/domains/params)"""
         result = []
@@ -260,7 +275,8 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
             })
         return result
 
-    @app.get("/healthz")
+    @router.get("/healthz")
+    @router.get("/v1/healthz")
     def healthz():
         """健康检查: db 可读 + worker 心跳(<60s)"""
         db_ok = db.ping()
@@ -274,6 +290,7 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
             raise HTTPException(status_code=503, detail=body)
         return body
 
+    app.include_router(router)  # 含 /v1/* 与旧无前缀路径
     return app
 
 

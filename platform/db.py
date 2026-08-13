@@ -38,13 +38,15 @@ _UNSET = object()
 
 
 def init_db(db_path: str):
-    """初始化数据库: 设置路径、建目录、建表(WAL)"""
+    """初始化数据库: 设置路径、建目录、建表 + 迁移 + 索引(WAL)"""
     global _db_path
     _db_path = os.path.abspath(db_path)
     os.makedirs(os.path.dirname(_db_path) or ".", exist_ok=True)
     conn = _connect()
     try:
-        _create_tables(conn)
+        _create_tables(conn)   # 建表(仅当不存在)
+        _migrate(conn)         # 旧库补列 / 重建去重约束
+        _create_indexes(conn)  # 索引(依赖迁移后的列)
         conn.commit()
     finally:
         conn.close()
@@ -83,8 +85,32 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+# items 表 DDL(items 建表 / 旧库重建共用,保证结构一致)
+# 注意: dedup_key 无列级 UNIQUE —— 跨任务引用记录(同一 dedup_key)需共存多行,
+#       原记录唯一性由部分唯一索引 idx_items_dedup_orig(is_ref=0)保证(见 _create_indexes)。
+_ITEMS_DDL = """
+    CREATE TABLE IF NOT EXISTS items (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        dedup_key  TEXT,
+        title      TEXT NOT NULL,
+        url        TEXT,
+        summary    TEXT,
+        source     TEXT,
+        domain     TEXT,
+        sector     TEXT,
+        type       TEXT DEFAULT 'news',
+        date_str   TEXT,
+        raw_data   TEXT,
+        consumed   INTEGER DEFAULT 0,
+        is_ref     INTEGER DEFAULT 0,
+        created_at TEXT
+    )
+"""
+
+
 def _create_tables(conn: sqlite3.Connection):
-    """建表: tasks + items(与选型书 4.1 一致)"""
+    """建表: tasks + items + source_stats(与选型书 4.1 一致)"""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
             id          TEXT PRIMARY KEY,
@@ -97,28 +123,90 @@ def _create_tables(conn: sqlite3.Connection):
             error       TEXT,
             items_count INTEGER DEFAULT 0,
             retries     INTEGER DEFAULT 0,
-            callback_url TEXT
+            callback_url TEXT,
+            archived    INTEGER DEFAULT 0
         )
     """)
+    conn.execute(_ITEMS_DDL)
+    # source_stats 预留(D15 源级健康状态): worker 后续按 source 更新统计
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS items (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-            dedup_key  TEXT UNIQUE,
-            title      TEXT NOT NULL,
-            url        TEXT,
-            summary    TEXT,
-            source     TEXT,
-            domain     TEXT,
-            sector     TEXT,
-            type       TEXT DEFAULT 'news',
-            date_str   TEXT,
-            raw_data   TEXT,
-            consumed   INTEGER DEFAULT 0,
-            created_at TEXT
+        CREATE TABLE IF NOT EXISTS source_stats (
+            source          TEXT PRIMARY KEY,
+            last_run_at     TEXT,
+            ok_count        INTEGER DEFAULT 0,
+            fail_count      INTEGER DEFAULT 0,
+            last_duration_s REAL,
+            last_error      TEXT
         )
     """)
+
+
+def _migrate(conn: sqlite3.Connection):
+    """旧库迁移: 补 items.is_ref / tasks.archived;去掉 dedup_key 列级 UNIQUE(重建表)。
+
+    迁移前旧表 dedup_key 是 UNIQUE,无法容纳跨任务引用行(同一 dedup_key 多行),
+    因此需重建 items 表为新结构(无列级 UNIQUE),原记录唯一性改由部分唯一索引保证。
+    """
+    # 1) items.is_ref 列
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(items)")}
+    if "is_ref" not in cols:
+        conn.execute("ALTER TABLE items ADD COLUMN is_ref INTEGER DEFAULT 0")
+    # 2) 旧表 dedup_key 列级 UNIQUE → 重建为无 UNIQUE 结构
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='items'"
+    ).fetchone()
+    table_sql = (row["sql"] or "") if row else ""
+    if "dedup_key" in table_sql and "UNIQUE" in table_sql.upper():
+        logger.info("检测到旧版 items 表(dedup_key UNIQUE),重建为支持跨任务引用的结构")
+        _rebuild_items_table(conn)
+    # 3) tasks.archived 列
+    tcols = {r["name"] for r in conn.execute("PRAGMA table_info(tasks)")}
+    if "archived" not in tcols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN archived INTEGER DEFAULT 0")
+    # 4) 防御脏数据: is_ref=0 的同 dedup_key 多行(异常库)→ 保留最小 id,其余转引用
+    _dedupe_legacy_keys(conn)
+
+
+def _dedupe_legacy_keys(conn: sqlite3.Connection):
+    """防御性清理: 若存在 is_ref=0 的同 dedup_key 多行(脏库/手工写库),保留最小 id,
+    其余置 is_ref=1 —— 保证部分唯一索引 idx_items_dedup_orig 可创建,启动不崩溃。"""
+    rows = conn.execute(
+        "SELECT dedup_key FROM items WHERE is_ref = 0 AND dedup_key IS NOT NULL "
+        "GROUP BY dedup_key HAVING COUNT(*) > 1"
+    ).fetchall()
+    for r in rows:
+        dup = conn.execute(
+            "SELECT id FROM items WHERE dedup_key = ? AND is_ref = 0 ORDER BY id",
+            (r["dedup_key"],),
+        ).fetchall()
+        for row in dup[1:]:
+            conn.execute("UPDATE items SET is_ref = 1 WHERE id = ?", (row["id"],))
+    if rows:
+        logger.warning("检测到 %d 组重复 dedup_key(脏数据),已转为引用记录", len(rows))
+
+
+def _rebuild_items_table(conn: sqlite3.Connection):
+    """items 表 9 步重建: 新建无 UNIQUE 表 → 复制数据 → 换名(旧索引随 DROP 一并删除)"""
+    ddl = _ITEMS_DDL.replace("CREATE TABLE IF NOT EXISTS items", "CREATE TABLE items_new")
+    conn.execute(ddl)
+    conn.execute("""
+        INSERT INTO items_new
+            (id, task_id, dedup_key, title, url, summary, source, domain, sector,
+             type, date_str, raw_data, consumed, is_ref, created_at)
+        SELECT id, task_id, dedup_key, title, url, summary, source, domain, sector,
+               type, date_str, raw_data, consumed, is_ref, created_at
+        FROM items
+    """)
+    conn.execute("DROP TABLE items")
+    conn.execute("ALTER TABLE items_new RENAME TO items")
+
+
+def _create_indexes(conn: sqlite3.Connection):
+    """常规索引 + 部分唯一索引(dedup_key 唯一性只约束原记录 is_ref=0,引用行不受限)"""
     conn.execute("CREATE INDEX IF NOT EXISTS idx_items_task ON items(task_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_items_dedup ON items(dedup_key)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_dedup_orig "
+                 "ON items(dedup_key) WHERE is_ref = 0")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
 
 
@@ -233,28 +321,79 @@ def list_pending_tasks() -> list:
 
 # ---------- items CRUD ----------
 
-def add_item(task_id: str, item: dict) -> bool:
-    """插入一条采集结果;dedup_key 已存在则跳过(全局去重)。
+# add_item 返回码: True 本次新增入库 / 'ref' 跨任务引用(复制入库) / False 同任务内重复(跳过)
+ADDED = True
+REFERRED = "ref"
+DUPLICATED = False
+
+
+def add_item(task_id: str, item: dict):
+    """插入一条采集结果,支持跨任务去重引用(D11)。
+
+    去重语义:
+      - dedup_key 全局首次出现 → 正常入库,返回 True
+      - dedup_key 已被**其他任务**采集 → 复制引用入库(is_ref=1,完整字段),
+        返回 'ref' —— 新任务同样能拉到自己的结果(全局去重只防重复采集,不阻断多任务消费)
+      - dedup_key 在本任务内重复 → 跳过,返回 False
+      - 无 dedup_key → 直接入库(不参与去重),返回 True
+
+    并发安全: 原记录唯一性由部分唯一索引 idx_items_dedup_orig(is_ref=0)保证,
+    INSERT OR IGNORE 在并发竞态下静默退化为引用/跳过路径,不会产生重复原记录。
 
     item 需包含: dedup_key/title/url/summary/source/domain/sector/type/date_str/raw_data(JSON 字符串)
-    Returns:
-        True 入库成功;False 命中去重被跳过
     """
     conn = _connect()
     try:
-        cur = conn.execute(
-            "INSERT OR IGNORE INTO items "
-            "(task_id, dedup_key, title, url, summary, source, domain, sector, type, date_str, raw_data, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (task_id, item.get("dedup_key"), item.get("title"), item.get("url"),
-             item.get("summary") or "", item.get("source") or "", item.get("domain") or "",
-             item.get("sector") or "", item.get("type") or "news", item.get("date_str") or "",
-             item.get("raw_data") or "{}", _now()),
-        )
+        dedup_key = item.get("dedup_key")
+        if not dedup_key:
+            # 无去重键 → 直接入库
+            _insert_item(conn, task_id, item, is_ref=0)
+            conn.commit()
+            return ADDED
+        # 1) 尝试作为原记录插入(部分唯一索引冲突时被 IGNORE,rowcount=0)
+        cur = _insert_item(conn, task_id, item, is_ref=0, or_ignore=True)
         conn.commit()
-        return cur.rowcount > 0
+        if cur.rowcount > 0:
+            return ADDED
+        # 2) 已被采集过 → 判断归属
+        row = conn.execute(
+            "SELECT task_id FROM items WHERE dedup_key = ? AND is_ref = 0 "
+            "ORDER BY id LIMIT 1", (dedup_key,),
+        ).fetchone()
+        if row is None:
+            return DUPLICATED  # 极端竞态,保守跳过
+        if row["task_id"] == task_id:
+            return DUPLICATED  # 同任务内重复
+        # 3) 跨任务 → 完整复制引用记录(is_ref=1,不受唯一索引约束)
+        #    任务内去重: 同任务同 dedup_key 已有引用行则跳过,避免重复引用
+        dup_ref = conn.execute(
+            "SELECT 1 FROM items WHERE task_id = ? AND dedup_key = ? AND is_ref = 1 LIMIT 1",
+            (task_id, dedup_key),
+        ).fetchone()
+        if dup_ref:
+            return DUPLICATED
+        cur = _insert_item(conn, task_id, item, is_ref=1, or_ignore=True)
+        conn.commit()
+        return REFERRED if cur.rowcount > 0 else DUPLICATED
     finally:
         conn.close()
+
+
+def _insert_item(conn: sqlite3.Connection, task_id: str, item: dict,
+                 is_ref: int, or_ignore: bool = False) -> sqlite3.Cursor:
+    """插入单条 items 记录(新增与引用共用,is_ref 区分)"""
+    sql = ("INSERT OR IGNORE INTO items " if or_ignore else "INSERT INTO items ") + (
+        "(task_id, dedup_key, title, url, summary, source, domain, sector, "
+        "type, date_str, raw_data, consumed, is_ref, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)"
+    )
+    return conn.execute(
+        sql,
+        (task_id, item.get("dedup_key"), item.get("title"), item.get("url"),
+         item.get("summary") or "", item.get("source") or "", item.get("domain") or "",
+         item.get("sector") or "", item.get("type") or "news", item.get("date_str") or "",
+         item.get("raw_data") or "{}", is_ref, _now()),
+    )
 
 
 def get_items(task_id: str, offset: int = 0, limit: int = 50,
@@ -313,6 +452,46 @@ def clear_items(task_id: str):
     try:
         conn.execute("DELETE FROM items WHERE task_id = ?", (task_id,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------- 数据清理(D13) ----------
+
+def cleanup(consumed_ttl_days: int = 90, task_archive_days: int = 30) -> dict:
+    """每日数据清理: 防公共平台数据无限膨胀。
+
+    - 删除 consumed=1 且 created_at 早于 now-consumed_ttl_days 的 items(已消费过期)
+    - 归档终态任务(done/failed/cancelled)且 finished_at 早于 now-task_archive_days:
+      删除其全部 items 并置 archived=1(归档任务不再出现在业务查询里)
+
+    Returns:
+        {"items_deleted": int, "tasks_archived": int}
+    """
+    now = datetime.now(CST)
+    consumed_cutoff = (now - timedelta(days=consumed_ttl_days)).strftime("%Y-%m-%d %H:%M:%S")
+    archive_cutoff = (now - timedelta(days=task_archive_days)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = _connect()
+    try:
+        # 1) 过期已消费 items
+        cur = conn.execute(
+            "DELETE FROM items WHERE consumed = 1 AND created_at < ?", (consumed_cutoff,)
+        )
+        items_deleted = cur.rowcount
+        # 2) 归档任务 + 删除其 items(先取 id 再删,避免游标迭代中修改表)
+        rows = conn.execute(
+            "SELECT id FROM tasks WHERE archived = 0 "
+            "AND status IN (?, ?, ?) AND finished_at IS NOT NULL AND finished_at < ?",
+            (*TERMINAL_STATUSES, archive_cutoff),
+        ).fetchall()
+        tasks_archived = 0
+        for r in rows:
+            cur = conn.execute("DELETE FROM items WHERE task_id = ?", (r["id"],))
+            items_deleted += cur.rowcount
+            conn.execute("UPDATE tasks SET archived = 1 WHERE id = ?", (r["id"],))
+            tasks_archived += 1
+        conn.commit()
+        return {"items_deleted": items_deleted, "tasks_archived": tasks_archived}
     finally:
         conn.close()
 
