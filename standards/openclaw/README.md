@@ -50,7 +50,7 @@ payload:
   kind: agentTurn
   message: |
     运行 BriefNexus 行业标准采集模块：
-    cd /home/zzz/workspace/projects/BriefNexus && python -m standards.crawler.main
+    cd <项目目录> && python -m standards.crawler.main
   timeoutSeconds: 300
 ```
 
@@ -58,10 +58,10 @@ payload:
 
 ```bash
 # 直接运行
-python /home/zzz/workspace/projects/BriefNexus/standards/crawler/main.py
+python <项目目录>/standards/crawler/main.py
 
 # 指定配置
-python /home/zzz/workspace/projects/BriefNexus/standards/crawler/main.py --config /path/to/custom_config.ini
+python <项目目录>/standards/crawler/main.py --config /path/to/custom_config.ini
 ```
 
 ### 方式三：crontab
@@ -71,9 +71,9 @@ python /home/zzz/workspace/projects/BriefNexus/standards/crawler/main.py --confi
 crontab -e
 
 # 添加行（工作日 09:00 Asia/Shanghai）
-0 9 * * 1-5 cd /home/zzz/workspace/projects/BriefNexus && \
-  /usr/bin/python3 -m standards.crawler.main >> \
-  /home/zzz/workspace/projects/BriefNexus/standards/output/crawl.log 2>&1
+0 9 * * 1-5 cd <项目目录> && \
+  python3 -m standards.crawler.main >> \
+  <项目目录>/standards/output/crawl.log 2>&1
 ```
 
 ## OpenClaw 交互钩子
@@ -87,7 +87,7 @@ crontab -e
 ## 单次运行
 
 ```bash
-cd /home/zzz/workspace/projects/BriefNexus
+cd <项目目录>
 
 # 全量采集（JSON + Markdown）
 python -m standards.crawler.main

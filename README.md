@@ -47,7 +47,7 @@
 ### 1. 启动服务
 
 ```bash
-cd ~/.openclaw/workspace/projects/BriefNexus
+cd <项目目录>          # 替换为你的 BriefNexus 路径（下同）
 .venv/bin/python platform/run.py        # 或 systemd 服务（已配置开机自启）
 # 服务监听 http://127.0.0.1:9000
 ```
@@ -201,7 +201,7 @@ sources:
 
 3. **重启服务** → `GET /v1/sources` 即可看到，`POST /v1/collect` 即可调用。
 
-### 方式二：外部挂载（平台外扩展，平台仓零改动）
+### 方式二：外部挂载（平台外扩展，平台仓零改动，推荐生产使用）
 
 平台支持从**外部目录**加载采集器（`collectors_extra_dirs` 配置），
 业务项目可在自己仓库内维护适配器，无需改动平台：
@@ -222,6 +222,9 @@ sources:
 
 **开发红线**：必须继承 BaseCollector 并实现 crawl()；必须声明 PARAM_SCHEMA；结构化数据放 raw_data（不塞 summary）；不得在采集器内直接访问平台 DB。
 
+> ⚠️ **代码内联（collector.code）为实验性功能**：仅限受信本机调用方，默认关闭（ALLOW_INLINE_CODE=true 才启用）。
+> 生产/对外请使用 **collector.module 引用**（调用方自管代码，部署到 collectors_extra_dirs）——平台不执行任意代码，更安全。
+
 ---
 
 ## 🗄 数据存储
@@ -239,8 +242,8 @@ sources:
 | 项 | 说明 |
 |----|------|
 | systemd | `briefnexus-api.service`（:9000，Restart=always，开机自启） |
-| healthcheck cron | 每小时 `脚本/briefnexus_healthcheck.sh`，失败飞书告警 |
-| 日志 | `journalctl --user -u briefnexus-api -f` |
+| healthcheck cron | 每小时 `scripts/briefnexus_healthcheck.sh`，失败飞书告警 |
+| 日志 | `journalctl -u briefnexus-api -f` |
 | 测试 | `.venv/bin/pytest platform/tests/ -q` |
 
 > ⚠️ 注意：`platform/` 包名与 Python 标准库 `platform` 同名——启动/测试请走 `platform/run.py` 和项目根下的 pytest，不要裸 `uvicorn platform.app:app`。

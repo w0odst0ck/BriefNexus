@@ -40,7 +40,7 @@ standards/
 ## 快速开始
 
 ```bash
-cd /home/zzz/workspace/projects/BriefNexus
+cd <项目目录>          # 替换为你的 BriefNexus 路径
 
 # 安装依赖（首次）
 pip install requests beautifulsoup4 lxml
