@@ -21,8 +21,7 @@ import time
 import traceback
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from platform import config, db
+from platform import config, delivery, memory_store as store
 
 import requests
 
@@ -65,15 +64,15 @@ def classify_error(exc: Exception) -> str:
     if isinstance(exc, requests.HTTPError):
         code = exc.response.status_code if exc.response is not None else None
         if code in (403, 429):
-            return db.ERROR_RATE_LIMITED
+            return store.ERROR_RATE_LIMITED
     msg = str(exc).lower()
     for token in ("403", "429", "rate limit", "rate-limited", "too many requests",
                   "captcha", "反爬", "频繁", "风控"):
         if token in msg:
-            return db.ERROR_RATE_LIMITED
+            return store.ERROR_RATE_LIMITED
     if isinstance(exc, requests.RequestException):
-        return db.ERROR_NETWORK
-    return db.ERROR_INTERNAL
+        return store.ERROR_NETWORK
+    return store.ERROR_INTERNAL
 
 
 def to_platform_item(item, source_name: str) -> dict:
@@ -92,7 +91,8 @@ def to_platform_item(item, source_name: str) -> dict:
                 continue
             raw[k] = v
         return {
-            "dedup_key": db.make_dedup_key(source_name, item.get("title", "") or ""),
+            "dedup_key": store.make_dedup_key(item.get("title", "") or "",
+                                             item.get("url", "") or ""),
             "title": item.get("title", "") or "",
             "url": item.get("url", "") or "",
             "summary": item.get("summary", "") or "",
@@ -109,7 +109,7 @@ def to_platform_item(item, source_name: str) -> dict:
             continue
         raw[k] = v
     return {
-        "dedup_key": db.make_dedup_key(source_name, item.title),
+        "dedup_key": store.make_dedup_key(item.title, getattr(item, "url", "") or ""),
         "title": item.title,
         "url": getattr(item, "url", "") or "",
         "summary": getattr(item, "summary", "") or "",
@@ -128,6 +128,26 @@ def _json_dumps(obj) -> str:
         return json.dumps(obj, ensure_ascii=False, default=str)
     except Exception:
         return "{}"
+
+
+def _item_to_callback(row: dict) -> dict:
+    """平台落库条目 → 回调内容(item_to_api 形状,raw_data 展开;与 app.item_to_api 等价)"""
+    raw = row.get("raw_data")
+    try:
+        raw = json.loads(raw) if raw else {}
+    except (json.JSONDecodeError, TypeError):
+        raw = {}
+    return {
+        "title": row["title"],
+        "url": row["url"],
+        "summary": row["summary"],
+        "source": row["source"],
+        "domain": row["domain"],
+        "sector": row["sector"],
+        "type": row["type"],
+        "date_str": row["date_str"],
+        "raw_data": raw,
+    }
 
 
 # ---------- 内联代码执行(D16/D19/D20) ----------
@@ -204,7 +224,7 @@ class InlineCodeRuntime:
                 if ns is not None:
                     return ns
             # 锁外构建(compile/exec/DB 可能耗时,不占全局锁阻塞其他内联采集器)
-            if db.get_collector_cache(code_hash) is None:
+            if store.get_collector_cache(code_hash) is None:
                 bad = config.check_inline_code_ast(code)
                 if bad:
                     raise InlineCodeBlocked(bad)
@@ -223,7 +243,7 @@ class InlineCodeRuntime:
             # 锁内插入缓存
             with self._guard:
                 self._cache_put(code_hash, ns)
-            db.upsert_collector_cache(code_hash, code)
+            store.upsert_collector_cache(code_hash, code)
         return ns
 
     @staticmethod
@@ -322,17 +342,17 @@ class Scheduler:
 
     def __init__(self, max_workers: int = 2, task_timeout_s: int = 300,
                  poll_interval: float = 1.0, retry_delays=None,
-                 cleanup_consumed_ttl_days: int = 90, cleanup_task_archive_days: int = 30):
+                 callback_timeout_s: int = 10, callback_retry_delays=None):
         self.max_workers = max_workers
         self.task_timeout_s = task_timeout_s
         self.poll_interval = poll_interval
         self.retry_delays = tuple(retry_delays or RETRY_DELAYS)
-        # 每日清理(D13)参数与上次清理日期(重启后当天不再重复执行)
-        self.cleanup_consumed_ttl_days = cleanup_consumed_ttl_days
-        self.cleanup_task_archive_days = cleanup_task_archive_days
-        self._last_cleanup_date = None
+        # 回调投递参数(锁外投递,独立线程池,不占用采集 worker)
+        self.callback_timeout_s = callback_timeout_s
+        self.callback_retry_delays = tuple(callback_retry_delays or (2, 4, 8))
 
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="platform-collect")
+        self._callback_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="platform-callback")
         self._stop = threading.Event()
         self._thread = None
 
@@ -363,6 +383,9 @@ class Scheduler:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=timeout)
         self._pool.shutdown(wait=False)
+        # 回调投递: 进程退出时内存数据一并清空,未完成回调无持久化意义,
+        # 故 shutdown(wait=False) 直接丢弃,不阻塞 stop(避免被慢回调拖住退出)。
+        self._callback_pool.shutdown(wait=False)
         logger.info("调度器已停止")
 
     # ---------- 取消 / 重试 对外接口(由 API 层调用) ----------
@@ -378,25 +401,27 @@ class Scheduler:
 
     def cancel_task(self, task_id: str) -> bool:
         """API cancel: pending/running → cancelled;返回是否取消成功"""
-        task = db.get_task(task_id)
+        task = store.get_task(task_id)
         if not task:
             return False
-        if task["status"] not in (db.STATUS_PENDING, db.STATUS_RUNNING):
+        if task["status"] not in (store.STATUS_PENDING, store.STATUS_RUNNING):
             return False
-        db.update_task(task_id, status=db.STATUS_CANCELLED, finished_at=db._now())
+        store.update_task(task_id, status=store.STATUS_CANCELLED, finished_at=store._now())
         self.request_cancel(task_id)
         self._drop_retry(task_id)
         return True
 
     def retry_task(self, task_id: str) -> bool:
-        """API retry: 仅 failed 可重跑;重置 pending 并清空旧结果/重试计数/堆栈"""
-        task = db.get_task(task_id)
-        if not task or task["status"] != db.STATUS_FAILED:
+        """API retry: 仅 failed 可重跑;重置 pending 并清空旧结果/重试计数/堆栈/回调状态"""
+        task = store.get_task(task_id)
+        if not task or task["status"] != store.STATUS_FAILED:
             return False
-        db.clear_items(task_id)
-        db.update_task(task_id, status=db.STATUS_PENDING, error=None,
-                       finished_at=None, items_count=0, retries=0,
-                       traceback=None, collector_log=None)
+        store.clear_items(task_id)
+        # 清回调状态/交付标记: 重采后重新交付(回调语义重置)
+        store.update_task(task_id, status=store.STATUS_PENDING, error=None,
+                          finished_at=None, items_count=0, retries=0,
+                          traceback=None, collector_log=None,
+                          callback_status=None, delivered=False)
         self._drop_retry(task_id)
         return True
 
@@ -409,37 +434,30 @@ class Scheduler:
             try:
                 self._enforce_timeouts()
                 self._dispatch()
-                self._maybe_cleanup()
+                self._sweep_ttl()
             except Exception as e:
                 logger.error("worker 主循环异常: %s", e)
             self._stop.wait(self.poll_interval)
 
-    # ---------- 每日清理(D13) ----------
+    # ---------- TTL 清扫(替代每日清理 D13) ----------
 
-    def _maybe_cleanup(self, today: datetime | None = None) -> dict | None:
-        """每日执行一次数据清理: 已消费过期 items 删除 + 终态超期任务归档。
+    def _sweep_ttl(self, now: float | None = None):
+        """每轮主动回收过期任务(含其 items/dedup),释放内存。
 
-        last_cleanup_date 记录执行日期,重启后当天不再重复执行(任务书要求)。
-        无论成败都记录日期,失败次日再试(避免主循环每秒重试刷错误日志)。
-        Returns:
-            本次实际执行返回 {"items_deleted", "tasks_archived"};当天已执行返回 None。
+        now 缺省取 time.time();可注入时间用于测试。返回本次删除的任务数。
         """
-        today = today or datetime.now(db.CST).date()
-        if today == self._last_cleanup_date:
-            return None
-        self._last_cleanup_date = today  # 先记录,防主循环高频重试
         try:
-            stats = db.cleanup(self.cleanup_consumed_ttl_days, self.cleanup_task_archive_days)
-            if stats["items_deleted"] or stats["tasks_archived"]:
-                logger.info("每日清理完成: %s", stats)
-            return stats
+            swept = store.sweep_expired(now if now is not None else time.time())
+            if swept:
+                logger.info("TTL 清扫: %d 个过期任务", swept)
+            return swept
         except Exception as e:
-            logger.error("每日清理失败: %s", e)
-            return None
+            logger.error("TTL 清扫失败: %s", e)
+            return 0
 
     def _dispatch(self):
         """领取 pending 任务: 每源锁非阻塞获取 → 置 running → 交线程池执行"""
-        for task in db.list_pending_tasks():
+        for task in store.list_pending_tasks():
             if self._stop.is_set():
                 return
             task_id = task["id"]
@@ -451,7 +469,7 @@ class Scheduler:
                 continue  # 同源任务在跑 → 跳过,下轮再试
             try:
                 # 原子领取: 仅当仍为 pending 才置 running(防多 worker 双领)
-                if not db.claim_task(task_id):
+                if not store.claim_task(task_id):
                     lock.release()
                     continue
                 with self._mem_guard:
@@ -472,29 +490,32 @@ class Scheduler:
                 logger.warning("任务 %s 超时(>%ds),强制 failed(error=network)",
                                task_id, self.task_timeout_s)
                 self.request_cancel(task_id)  # 通知执行线程尽快退出(软中止)
-                self._fail(task_id, db.ERROR_NETWORK, ignore_cancel=True)
+                self._fail(task_id, store.ERROR_NETWORK, ignore_cancel=True)
 
     # ---------- 任务执行 ----------
 
     def _execute(self, task_id: str, lock: threading.Lock):
+        deliver = None
         try:
-            self._run_task(task_id)
+            deliver = self._run_task(task_id)  # 返回 (callback_url, items) 或 None
         finally:
-            lock.release()
+            lock.release()                     # 先放每源锁,避免回调阻塞同源后续任务
             self.forget_cancel(task_id)
             with self._mem_guard:
                 self._running_at.pop(task_id, None)
+        if deliver is not None:
+            self._callback_pool.submit(self._deliver_callback, task_id, *deliver)
 
     def _run_task(self, task_id: str):
-        task = db.get_task(task_id)
-        if not task or task["status"] != db.STATUS_RUNNING:
-            return
+        task = store.get_task(task_id)
+        if not task or task["status"] != store.STATUS_RUNNING:
+            return None
         try:
             collector = self._instantiate(task)
         except Exception as e:
             logger.error("任务 %s 采集器实例化失败: %s", task_id, e)
             self._fail(task_id, classify_error(e), traceback_text=traceback.format_exc())
-            return
+            return None
 
         items = []
         # D18: 捕获采集器 stderr 输出(collector_log),异常时一并入库
@@ -508,35 +529,59 @@ class Scheduler:
             logger.error("任务 %s 采集失败: %s", task_id, e)
             self._fail(task_id, classify_error(e), traceback_text=traceback.format_exc(),
                        collector_log=stderr_buf.getvalue().strip() or None)
-            return
+            return None
 
         if self._is_cancelled(task_id):
             logger.info("任务 %s 已取消,丢弃采集结果", task_id)
-            return
+            return None
 
         # 源返回空 → source_empty(可重试)
         if not items:
-            self._fail(task_id, db.ERROR_SOURCE_EMPTY)
-            return
+            self._fail(task_id, store.ERROR_SOURCE_EMPTY)
+            return None
 
         # 逐条落库(带去重);每条前检查取消标志
         saved = 0
+        saved_items = []  # 实际落库的条目(供回调投递)
         for item in items:
             if self._is_cancelled(task_id):
                 logger.info("任务 %s 执行中被取消,丢弃剩余结果", task_id)
                 break
             try:
-                if db.add_item(task_id, to_platform_item(item, task["source"])):
+                platform_item = to_platform_item(item, task["source"])
+                if store.add_item(task_id, platform_item):
                     saved += 1
+                    saved_items.append(platform_item)
             except Exception as e:
                 logger.error("任务 %s 落库异常: %s", task_id, e)
 
         if self._is_cancelled(task_id):
-            return  # 保持 cancelled 状态,不再更新
+            return None  # 保持 cancelled 状态,不再更新
         # 成功时清空历史失败残留的 traceback;collector_log 保留本次采集的 stderr 输出
-        db.update_task(task_id, status=db.STATUS_DONE, items_count=saved, finished_at=db._now(),
-                       traceback=None, collector_log=log)
+        store.update_task(task_id, status=store.STATUS_DONE, items_count=saved,
+                          finished_at=store._now(), traceback=None, collector_log=log)
         logger.info("任务 %s done: %d 条", task_id, saved)
+
+        # 回调投递: 仅当有结果且任务声明了 callback_url 时,返回 (url, items)
+        if saved_items and task.get("callback_url"):
+            return task["callback_url"], [_item_to_callback(p) for p in saved_items]
+        return None
+
+    def _deliver_callback(self, task_id: str, url: str, items: list):
+        """锁外回调投递: 2xx 成功 → delivered + free_items;失败 → failed + clear_items"""
+        payload = {"task_id": task_id, "status": "done",
+                   "items_count": len(items), "items": items}
+        ok, _ = delivery.post_json_with_retry(
+            url, payload, timeout_s=self.callback_timeout_s,
+            retry_delays=self.callback_retry_delays)
+        if ok:
+            store.mark_delivered(task_id)   # delivered=True, callback_status=delivered
+            store.free_items(task_id)       # 交付即清
+            logger.info("任务 %s 回调成功,结果已释放", task_id)
+        else:
+            store.mark_callback_failed(task_id)  # status=failed, error=callback_failed
+            store.clear_items(task_id)           # 丢弃结果(平台零持久化)
+            logger.error("任务 %s 回调失败,结果已丢弃", task_id)
 
     def _instantiate(self, task: dict):
         """实例化采集器: 按 collector_spec 分派(module 引用 / code 内联 / 配置内置源)
@@ -584,7 +629,7 @@ class Scheduler:
 
         ignore_cancel=True 用于超时场景(已设软中止标志但仍需走重试)。
         """
-        task = db.get_task(task_id)
+        task = store.get_task(task_id)
         if not task:
             return
         if not ignore_cancel and self._is_cancelled(task_id):
@@ -592,17 +637,17 @@ class Scheduler:
         retries = task["retries"] or 0
         if retries < len(self.retry_delays):
             delay = self.retry_delays[retries]
-            db.update_task(task_id, status=db.STATUS_PENDING, error=error,
-                           finished_at=db._now(), retries=retries + 1,
-                           traceback=traceback_text, collector_log=collector_log)
+            store.update_task(task_id, status=store.STATUS_PENDING, error=error,
+                              finished_at=store._now(), retries=retries + 1,
+                              traceback=traceback_text, collector_log=collector_log)
             with self._mem_guard:
                 self._retry_after[task_id] = time.time() + delay
             logger.warning("任务 %s 失败(%s),第 %d 次重试,退避 %ds",
                            task_id, error, retries + 1, delay)
         else:
-            db.update_task(task_id, status=db.STATUS_FAILED, error=error,
-                           finished_at=db._now(), traceback=traceback_text,
-                           collector_log=collector_log)
+            store.update_task(task_id, status=store.STATUS_FAILED, error=error,
+                              finished_at=store._now(), traceback=traceback_text,
+                              collector_log=collector_log)
             logger.error("任务 %s 失败(%s),重试耗尽,终态 failed", task_id, error)
 
     # ---------- 内部辅助 ----------

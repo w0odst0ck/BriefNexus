@@ -29,7 +29,11 @@ collectors_extra_dirs:
 sources: {}
 
 storage:
-  db_path: data/briefnexus.db   # 相对项目根;WAL 模式,API 线程与 worker 并发写
-  dedup_ttl_days: 90            # 去重键保留天数(预留,供后续清理任务使用)
-  # consumed_ttl_days: 90       # 每日清理(D13): 已消费 items 保留天数,超期删除
-  # task_archive_days: 30       # 每日清理(D13): 终态任务归档天数,超期归档(含其 items)
+  ttl_seconds: 3600            # 任务+结果内存保留时长(过期清理; 进程重启即全清)
+  max_tasks: 1000              # 任务表上限, 超限 POST /collect 返回 429
+  max_items_per_task: 10000    # 单任务结果条目上限, 超限截断并置 items_truncated=true
+  free_on_full_consume: true   # 拉取通道: 全部消费完即释放 items(隐私更激进)
+
+callback:
+  timeout_s: 10                # 回调 POST 超时
+  retry_delays: [2, 4, 8]      # 指数退避(初次后 3 次重试)

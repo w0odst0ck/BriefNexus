@@ -32,7 +32,7 @@ from scripts._dotenv import load_project_env
 
 load_project_env()
 
-from platform import config, db, scheduler
+from platform import config, delivery, memory_store as store, scheduler
 from platform.scheduler import Scheduler
 
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -140,6 +140,10 @@ def task_to_api(task: dict) -> dict:
         body["traceback"] = task["traceback"]
     if task.get("collector_log"):
         body["collector_log"] = task["collector_log"]
+    if task.get("items_truncated"):
+        body["items_truncated"] = True
+    if task.get("callback_status"):
+        body["callback_status"] = task["callback_status"]
     return body
 
 
@@ -158,19 +162,22 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
         config.load_config()
     server = config.get_server_config()
     storage_cfg = config.get_storage_config()
+    callback_cfg = config.get_callback_config()
 
     opts = dict(scheduler_opts or {})
     opts.setdefault("max_workers", server["max_workers"])
     opts.setdefault("task_timeout_s", server["task_timeout_s"])
-    # 每日清理参数来自 storage 配置(D13)
-    opts.setdefault("cleanup_consumed_ttl_days", storage_cfg["consumed_ttl_days"])
-    opts.setdefault("cleanup_task_archive_days", storage_cfg["task_archive_days"])
+    opts.setdefault("callback_timeout_s", callback_cfg["timeout_s"])
+    opts.setdefault("callback_retry_delays", callback_cfg["retry_delays"])
     sched = Scheduler(**opts)
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
         storage = config.get_storage_config()
-        db.init_db(storage["db_path"])
+        store.init_store(ttl_seconds=storage["ttl_seconds"],
+                         max_tasks=storage["max_tasks"],
+                         max_items_per_task=storage["max_items_per_task"],
+                         free_on_full_consume=storage["free_on_full_consume"])
         sched.start()
         try:
             yield
@@ -250,8 +257,16 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
             source_name = req.source
         else:
             raise HTTPException(status_code=422, detail="必须提供 source 或 collector")
-        return db.create_task(source_name, req.params or {}, req.domain, req.callback_url,
-                              collector_spec=collector_spec)
+        if req.callback_url is not None:
+            err = delivery.validate_callback_url(req.callback_url)
+            if err:
+                raise HTTPException(status_code=422, detail=err)
+        try:
+            return store.create_task(source_name, req.params or {}, req.domain,
+                                     req.callback_url, collector_spec=collector_spec)
+        except store.CapacityError:
+            raise HTTPException(status_code=429,
+                                detail="内存任务表已满，请稍后重试") from None
 
     @router.post("/collect", status_code=201)
     @router.post("/v1/collect", status_code=201)
@@ -267,12 +282,13 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
         task_id = _submit_task(req)
         deadline = time.time() + SYNC_TIMEOUT_S
         while True:
-            task = db.get_task(task_id)
+            task = store.get_task(task_id)
             items = []
-            if task["status"] == db.STATUS_DONE:
-                rows = db.get_items(task_id, 0, ITEM_PAGE_MAX)
+            if task["status"] == store.STATUS_DONE:
+                rows = store.get_items(task_id, 0, ITEM_PAGE_MAX)
                 items = [item_to_api(r) for r in rows]
-            if task["status"] in db.TERMINAL_STATUSES or time.time() >= deadline:
+            if task["status"] in store.TERMINAL_STATUSES or time.time() >= deadline:
+                store.free_items(task_id)  # 交付即清: 响应体返回后立即释放 items
                 return {"task_id": task_id, "status": task["status"],
                         "items": items, "items_count": task["items_count"]}
             time.sleep(0.2)
@@ -281,7 +297,7 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     @router.get("/v1/tasks/{task_id}")
     def get_task(task_id: str):
         """任务状态(不含 items,结果走 /items 分页)"""
-        task = db.get_task(task_id)
+        task = store.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
         return task_to_api(task)
@@ -290,14 +306,14 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     @router.get("/v1/tasks/{task_id}/items")
     def get_task_items(task_id: str, offset: int = 0, limit: int = 50, consume: int = 0):
         """分页拉取结果;consume=1 时返回后标记 consumed,下次拉取跳过"""
-        if not db.get_task(task_id):
+        if not store.get_task(task_id):
             raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
         offset = max(0, offset)
         limit = max(1, min(limit, ITEM_PAGE_MAX))
-        rows = db.get_items(task_id, offset, limit)
-        total = db.count_items(task_id, unconsumed_only=True)
+        rows = store.get_items(task_id, offset, limit)
+        total = store.count_items(task_id, unconsumed_only=True)
         if consume:
-            db.mark_consumed(task_id, [r["id"] for r in rows])
+            store.mark_consumed(task_id, [r["id"] for r in rows])
         return {
             "items": [item_to_api(r) for r in rows],
             "total": total,
@@ -308,25 +324,25 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     @router.post("/v1/tasks/{task_id}/cancel")
     def cancel_task(task_id: str):
         """取消任务(pending/running 可取消)"""
-        task = db.get_task(task_id)
+        task = store.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
         if not sched.cancel_task(task_id):
             raise HTTPException(status_code=409,
                                 detail=f"task not cancellable in status: {task['status']}")
-        return {"status": db.STATUS_CANCELLED}
+        return {"status": store.STATUS_CANCELLED}
 
     @router.post("/tasks/{task_id}/retry")
     @router.post("/v1/tasks/{task_id}/retry")
     def retry_task(task_id: str):
         """失败任务重跑 → 重置 pending"""
-        task = db.get_task(task_id)
+        task = store.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"task not found: {task_id}")
         if not sched.retry_task(task_id):
             raise HTTPException(status_code=409,
                                 detail=f"only failed task can be retried, current: {task['status']}")
-        return {"status": db.STATUS_PENDING}
+        return {"status": store.STATUS_PENDING}
 
     @router.get("/sources")
     @router.get("/v1/sources")
@@ -336,7 +352,7 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
         动态源从 tasks 聚合 last_used/success_count(collector_spec 非空的任务);
         平台内置 8 源已退役(sources: {}),本端点不再返回内置源。
         """
-        activity = {r["source"]: r for r in db.get_source_activity(days=30)}
+        activity = {r["source"]: r for r in store.get_source_activity(days=30)}
         static_names = set()
         result = []
         # 静态: config.d 挂载 / 配置启用的源
@@ -398,12 +414,13 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     @router.get("/healthz")
     @router.get("/v1/healthz")
     def healthz():
-        """健康检查: db 可读 + worker 心跳(<60s)"""
-        db_ok = db.ping()
+        """健康检查: 内存存储 + worker 心跳(<60s)"""
+        db_ok = store.ping()
         worker_alive = scheduler.is_worker_alive()
         body = {
             "status": "ok" if (db_ok and worker_alive) else "error",
             "db": "ok" if db_ok else "error",
+            "storage": "memory",
             "worker": "alive" if worker_alive else "dead",
         }
         if not (db_ok and worker_alive):

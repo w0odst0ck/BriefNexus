@@ -16,14 +16,14 @@
 ┌──────▼──────────────────────────────┐
 │      BriefNexus 采集平台（服务层）     │
 │  FastAPI :9000（API）→ 任务队列       │
-│  → 采集内核（intel/ + standards/）    │
-│  → SQLite 存储                       │
+│  → 采集内核（intel/）                 │
+│  → 内存态存储（零磁盘数据文件）         │
 └─────────────────────────────────────┘
 ```
 
 **平台纯净性原则**：
 - 只留存采集器 + 平台自身数据，**不包含任何业务项目的代码或数据**
-- 消费方通过 HTTP 接口访问（提交任务 / 查状态 / 拉结果），**不知道也不关心采集器内部**
+- 消费方通过 HTTP 接口访问（提交任务 / 查状态 / 拉结果 / 收回调），**不知道也不关心采集器内部**
 - 采集内核持续演进（加源/改源/换实现）不影响 API 与消费方
 - 扩展采集器可在平台外挂载（见「扩展新采集器」），平台仓零改动
 
@@ -33,11 +33,11 @@
 
 | 能力 | 说明 |
 |------|------|
-| **HTTP 采集 API** | `POST /collect` 提交任务 → 异步执行 → `GET /tasks/{id}` 查状态/结果 |
-| **8 个即用数据源** | 白宫/NVIDIA/SEC/欧盟/arXiv/ADAS/东方财富/巨潮资讯 |
-| **异步任务队列** | SQLite + 线程池（不引 Redis），超时/重试/取消/每源锁 |
-| **全局去重** | `(source, title)` MD5 + 跨任务引用，多消费方同时使用互不饿死 |
-| **行业标准采集** | 国标元数据采集 + 全文检索（standards 模块，可选服务化） |
+| **HTTP 采集 API** | `POST /collect` 提交任务 → 异步执行 → 查状态/拉结果/收回调 |
+| **内存态存储** | 采集结果仅存进程内存，TTL 到期/交付/重启即清，无磁盘数据文件 |
+| **三种交付模式** | 同步返回（`/collect/sync`）+ 回调 webhook（`callback_url`）+ 拉取（`/tasks/{id}/items`） |
+| **异步任务队列** | 线程池（不引外部队列），超时/重试/取消/每源锁 |
+| **单任务内去重** | `(title, url)` MD5，同一任务内重复条目自动跳过 |
 | **即插即用扩展** | 新源 = 一个适配器文件 + 配置条目，平台零改动 |
 
 ---
@@ -52,13 +52,15 @@ cd <项目目录>          # 替换为你的 BriefNexus 路径（下同）
 # 服务监听 http://127.0.0.1:9000
 ```
 
+> 平台必须**单 worker 进程**运行：内存态存储只在单进程内可见，`uvicorn --workers>1` 会导致任务分散/丢失。
+
 ### 2. 提交采集任务
 
 ```bash
 # 异步提交（推荐）
 curl -X POST http://127.0.0.1:9000/collect \
   -H 'Content-Type: application/json' \
-  -d '{"source":"white_house","params":{"max_age":7}}'
+  -d '{"source":"<source>","params":{}}'
 # → {"task_id":"t_1786..."}
 
 # 查状态
@@ -70,22 +72,19 @@ curl "http://127.0.0.1:9000/tasks/t_1786.../items?limit=50&consume=1"
 
 # 小任务同步执行（<30s 直接返回结果）
 curl -X POST http://127.0.0.1:9000/collect/sync \
-  -H 'Content-Type: application/json' -d '{"source":"cninfo"}'
+  -H 'Content-Type: application/json' -d '{"source":"<source>"}'
+
+# 回调模式（任务完成后 POST 结果到你的地址）
+curl -X POST http://127.0.0.1:9000/collect \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"<source>","callback_url":"https://your.service/cb"}'
 
 # 看可用源
 curl http://127.0.0.1:9000/sources
 
 # 健康检查（含 worker 心跳）
 curl http://127.0.0.1:9000/healthz
-# → {"status":"ok","db":"ok","worker":"alive"}
-```
-
-### 3. 标准采集（standards CLI，可选）
-
-```bash
-.venv/bin/python -m standards.crawler.main stats     # 数据库统计
-.venv/bin/python -m standards.crawler.main search "LED 筒灯"
-.venv/bin/python -m standards.crawler.main list --category 国标 --date-from 2024
+# → {"status":"ok","db":"ok","storage":"memory","worker":"alive"}
 ```
 
 ---
@@ -115,16 +114,17 @@ failed 可 /retry 重跑（自动重试 3 次，退避 5s/10s/20s）
 超时 300s 强制 failed
 ```
 
-错误分类（`error` 字段）：`rate_limited`（反爬/限流）| `network`（超时/断连）| `source_empty`（源无数据）| `internal`（代码异常）
+错误分类（`error` 字段）：`rate_limited`（反爬/限流）| `network`（超时/断连）| `source_empty`（源无数据）| `internal`（代码异常）| `callback_failed`（回调投递失败）
 
 ### 请求示例
 
 ```json
 POST /v1/collect
 {
-  "source": "white_house",
-  "params": {"max_age": 7},
-  "domain": "self_driving"
+  "source": "<source>",
+  "params": {},
+  "domain": "<domain>",
+  "callback_url": "https://your.service/cb"
 }
 ```
 
@@ -132,11 +132,11 @@ POST /v1/collect
 
 ```json
 {
-  "title": "Fact Sheet: ...",
-  "url": "https://www.whitehouse.gov/...",
+  "title": "...",
+  "url": "https://...",
   "summary": "",
-  "source": "White House",
-  "domain": "finance",
+  "source": "...",
+  "domain": "...",
   "sector": "",
   "type": "news",
   "date_str": "2026-08-12",
@@ -149,20 +149,35 @@ POST /v1/collect
 
 ---
 
-## 🗂 数据源（8 个即用）
+## 📦 数据存储与生命周期（内存态）
 
-| 源 | 内容 | domain | 状态 |
-|----|------|--------|------|
-| `white_house` | 白宫简报室（科技/AI/贸易） | finance/self_driving/semiconductor | ✅ |
-| `nvidia` | NVIDIA 官方博客 | semiconductor | ✅ |
-| `sec_edgar` | 美国 SEC 文件 | finance | ✅ |
-| `eu_commission` | 欧盟委员会动态 | finance/self_driving | ✅ |
-| `arxiv_perception` | arXiv 感知/自动驾驶论文 | self_driving | ✅ |
-| `adas_vehicle_intl` | ADAS/智能车辆国际动态 | self_driving | ✅ |
-| `eastmoney` | 东方财富要闻（国内） | finance | ⚠️ 反爬（418） |
-| `cninfo` | 巨潮资讯公告（国内） | finance | ✅ 已实采 20 条 |
+- **零持久化**：采集结果只存在于进程堆内存（`dict`/`list`/`set`），**不写任何磁盘数据文件**——无数据库文件、无临时文件、无数据目录。进程重启/崩溃即全部清空。
+- **TTL**：任务与结果默认保留 3600s（可配 `storage.ttl_seconds`），到期由惰性查询 + worker 主动清扫两层回收。
+- **容量上限**：任务表默认上限 1000（超限 `POST /collect` 返回 **429**）；单任务条目默认上限 10000（超限截断并透出 `items_truncated=true`）。
+- **交付即清**：结果一旦成功交付（同步响应 / 回调成功 / 拉取消费完）即释放，缩短敏感数据驻留窗口。
+- **单任务内去重**：键为 `(title, url)` 的 MD5，仅在同一任务内生效，不跨任务去重。
 
-> 新增源：见下方「扩展新采集器」。
+### 三种交付模式
+
+| 模式 | 入口 | 结果释放时机 |
+|------|------|-------------|
+| 同步返回 | `POST /v1/collect/sync` | 响应体返回后立即释放 |
+| 回调 webhook | `POST /v1/collect` + `callback_url` | 回调成功后立即释放；失败丢弃结果 |
+| 拉取 | `GET /v1/tasks/{id}/items?consume=1` | 全部消费完即释放（`free_on_full_consume=true`） |
+
+### 回调契约
+
+- 触发时机：采集完成（`status=done`）后，在**每源锁之外**独立线程池投递，不阻塞同源后续任务。
+- 请求体：`{"task_id","status":"done","items_count","items":[...]}`，`Content-Type: application/json`。
+- 超时：默认 10s（`callback.timeout_s`）。
+- 重试：初次 + 最多 3 次重试，指数退避 `2s/4s/8s`（`callback.retry_delays`），共 4 次尝试。
+- 成功判定：HTTP **2xx**。
+- 失败处理：4 次尝试仍失败 → 任务置 `failed`、`error=callback_failed`，结果丢弃（平台零持久化）。
+- **至少一次**语义：回调超时后重试可能导致重复投递，消费方应保证幂等。
+- **`callback_url` 仅允许 `http`/`https`**，提交阶段校验 scheme（非法 422）；投递阶段 `allow_redirects=False`（不跟随重定向），防 SSRF 跳转放大。
+  - 平台默认**不阻断私网 IP**（平台绑定 `127.0.0.1` 仅受信调用方 + 本机回环 stub），若未来对外暴露需另加 RFC1918/链路本地拦截（不在当前范围）。
+
+> ⚠️ 同步 `/collect/sync` 超时（30s）后任务可能仍处于 `pending/running`，可用 `GET /v1/tasks/{id}/items` 在 TTL 窗口内拉取结果。
 
 ---
 
@@ -220,20 +235,10 @@ sources:
     module: your_project.collectors.my_source:MySourceCollector
 ```
 
-**开发红线**：必须继承 BaseCollector 并实现 crawl()；必须声明 PARAM_SCHEMA；结构化数据放 raw_data（不塞 summary）；不得在采集器内直接访问平台 DB。
+**开发红线**：必须继承 BaseCollector 并实现 crawl()；必须声明 PARAM_SCHEMA；结构化数据放 raw_data（不塞 summary）；不得在采集器内直接访问平台存储。
 
 > ⚠️ **代码内联（collector.code）为实验性功能**：仅限受信本机调用方，默认关闭（ALLOW_INLINE_CODE=true 才启用）。
 > 生产/对外请使用 **collector.module 引用**（调用方自管代码，部署到 collectors_extra_dirs）——平台不执行任意代码，更安全。
-
----
-
-## 🗄 数据存储
-
-- **平台库** `data/briefnexus.db`（SQLite，WAL 模式）：
-  - `tasks` 表 — 任务状态/错误/重试计数
-  - `items` 表 — 采集结果（dedup_key 全局去重 + consumed 消费标记 + 跨任务引用）
-- **标准库** `standards/standards.db`：国标元数据（FTS5 全文索引 + ICS 分类树 + 采标 IEC 映射）
-- **数据清理**：worker 每日清理过期数据（>90 天已消费 items + >30 天完成任务归档）
 
 ---
 
@@ -242,7 +247,7 @@ sources:
 | 项 | 说明 |
 |----|------|
 | systemd | `briefnexus-api.service`（:9000，Restart=always，开机自启） |
-| healthcheck cron | 每小时 `scripts/briefnexus_healthcheck.sh`，失败飞书告警 |
+| healthcheck cron | 每小时 `脚本/briefnexus_healthcheck.sh`，失败飞书告警 |
 | 日志 | `journalctl -u briefnexus-api -f` |
 | 测试 | `.venv/bin/pytest platform/tests/ -q` |
 
@@ -256,22 +261,18 @@ sources:
 BriefNexus/
 ├── platform/                  ← 平台服务层（HTTP API + 任务队列）
 │   ├── app.py                FastAPI 入口（/v1 路由）
-│   ├── scheduler.py          后台 worker（心跳/超时/重试/每源锁/清理）
-│   ├── db.py                 SQLite WAL 存储（tasks/items + 跨任务引用）
+│   ├── scheduler.py          后台 worker（心跳/超时/重试/每源锁/回调投递/TTL 清扫）
+│   ├── memory_store.py       内存态存储（任务/结果/去重/缓存，零落盘）
+│   ├── delivery.py           回调交付（webhook POST + 重试/超时/SSRF 护栏）
 │   ├── config.py             platform_config.yaml + config.d 片段合并 + 动态 import
 │   ├── run.py                启动入口（规避包名冲突）
-│   ├── platform_config.yaml  平台配置（源开关/参数/存储/外部目录）
+│   ├── platform_config.yaml  平台配置（源开关/参数/存储/回调/外部目录）
 │   └── tests/                测试用例
 ├── intel/                     ← 采集内核（情报采集）
 │   ├── core/                 BaseCollector 基类 / 注册器 / 去重
-│   ├── collectors/           数据源适配器（8 个）
+│   ├── collectors/           数据源适配器
 │   ├── pipeline/             分类 / 报告
 │   └── cli.py                命令行入口（run/list）
-├── standards/                 ← 采集内核（行业标准）
-│   ├── crawler/              SAMR/openstd/IEC 平台适配器 + 下载器
-│   ├── engine/               SQLite FTS5 存储 / 去重 / 导出 / ICS 树
-│   ├── configs/              领域配置示例（照明等）
-│   └── standards.db          国标元数据
 ├── tools/                     工具
 ├── scripts/                   辅助脚本
 ├── plan/                      技术选型书 / 任务书（本地，不入库）
@@ -282,10 +283,10 @@ BriefNexus/
 
 ## 🔗 消费方接入指南
 
-任何应用按以下三步接入：
+任何应用按以下步骤接入：
 
 1. **看源**：`GET /v1/sources` 了解可用采集器和参数
-2. **采集**：`POST /v1/collect` 提交任务，轮询 `GET /v1/tasks/{id}` 至 done
+2. **采集**：`POST /v1/collect` 提交任务（可选带 `callback_url` 收回调），轮询 `GET /v1/tasks/{id}` 至 done
 3. **消费**：`GET /v1/tasks/{id}/items?consume=1` 分页拉取，转成自己的数据结构
 
 平台不感知消费方身份——提交什么源、怎么消费结果，完全由调用方决定。
@@ -294,15 +295,15 @@ BriefNexus/
 
 ## 📋 Roadmap
 
-- [x] **P0**（2026-08-13）：API 骨架 + 异步任务 + 8 源透出 + 部署
-- [x] **P0.5**（2026-08-13）：跨任务去重引用 / 外部采集器目录 / config.d / 数据清理 / API 版本化 / SAMR 服务化
+- [x] **P0**：API 骨架 + 异步任务 + 部署
+- [x] **P0.5**：外部采集器目录 / config.d / API 版本化
+- [x] **内存态改造**：零持久化 + 三种交付模式（sync/callback/pull）+ TTL/容量
 - [ ] **P1**：更多业务源适配器 / 人工审核队列（消费方侧）
-- [ ] **P2**：鉴权 / 限流 / Webhook 回调 / 源级健康状态
+- [ ] **P2**：鉴权 / 限流 / 源级健康状态
 
 ---
 
 ## 📚 参考
 
 - 技术选型书：`plan/通用采集平台-技术选型书.md`（架构决策 D1-D14）
-- 标准采集模块：`standards/README.md`
 - 情报采集模块：`intel/README.md`

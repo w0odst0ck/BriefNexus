@@ -12,6 +12,7 @@ def test_healthz_ok(client):
     body = r.json()
     assert body["status"] == "ok"
     assert body["db"] == "ok"
+    assert body["storage"] == "memory"
     assert body["worker"] == "alive"
 
 
@@ -76,12 +77,39 @@ def test_collect_loose_mode_no_schema(client):
     assert task["items_count"] == 1
 
 
-def test_collect_domain_and_callback_persisted(client):
+def test_collect_domain_and_callback(client, callback_server):
+    """CB-1 回调成功: 带 callback_url 的任务 done 后锁外回调投递,stub 收到 items"""
     r = client.post("/collect", json={
-        "source": "ok", "domain": "self_driving", "callback_url": "https://cb.example.com/x"})
+        "source": "ok", "domain": "self_driving", "callback_url": callback_server["url"]})
     assert r.status_code == 201
-    task = wait_api_task(client, r.json()["task_id"])
+    task_id = r.json()["task_id"]
+    task = wait_api_task(client, task_id)
     assert task["source"] == "ok"
+    assert task["status"] == "done"
+    # 回调为锁外异步投递,轮询等 stub 收到请求
+    deadline = time.time() + 10
+    bodies = []
+    while time.time() < deadline:
+        bodies = callback_server["state"].json_bodies()
+        if bodies:
+            break
+        time.sleep(0.05)
+    assert len(bodies) == 1
+    assert bodies[0]["task_id"] == task_id
+    assert bodies[0]["status"] == "done"
+    assert bodies[0]["items_count"] == 3
+    assert len(bodies[0]["items"]) == 3
+    assert bodies[0]["items"][0]["title"]
+    # 回调成功后 callback_status=delivered,items 交付即清
+    deadline = time.time() + 10
+    t = None
+    while time.time() < deadline:
+        t = client.get(f"/tasks/{task_id}").json()
+        if t.get("callback_status") == "delivered":
+            break
+        time.sleep(0.05)
+    assert t["callback_status"] == "delivered"
+    assert client.get(f"/tasks/{task_id}/items").json()["items"] == []
 
 
 # ---------- GET /tasks/{id} ----------
@@ -316,46 +344,6 @@ def test_legacy_paths_compat(client):
     assert client.get(f"/tasks/{task_id}/items").status_code == 200
 
 
-# ---------- samr 标准源(D10) ----------
-
-def test_collect_samr_via_api(client, monkeypatch):
-    """POST /v1/collect {"source":"samr"} → done,items 为标准条目(type=standard)"""
-    from platform import config as pconfig
-
-    import standards.crawler.platforms.samr as samr_mod
-
-    def fake_collect(self, keywords, ics_codes, max_pages):
-        return [{
-            "title": "GB/T 12345-2023 示例标准",
-            "standard_no": "GB/T 12345-2023",
-            "url": "https://std.samr.gov.cn/gb/search/gbDetailed?id=x",
-            "status": "现行",
-            "publish_date": "2023-06-01",
-            "category": "国标",
-            "ics_code": "29.140.40",
-            "publisher": "国家市场监督管理总局",
-            "summary": "示例摘要",
-            "source": "samr",
-        }]
-    monkeypatch.setattr(samr_mod.SamrCollector, "collect", fake_collect)
-    # 向已注入的测试配置动态注册 samr 源(复用真实适配器类)
-    pconfig.get_config()["sources"]["samr"] = {
-        "enabled": True,
-        "module": "intel.collectors.samr_standard:SamrStandardCollector",
-        "params": {},
-    }
-    r = client.post("/v1/collect", json={"source": "samr"})
-    assert r.status_code == 201
-    task = wait_api_task(client, r.json()["task_id"])
-    assert task["status"] == "done"
-    assert task["items_count"] == 1
-    items = client.get(f"/v1/tasks/{task['task_id']}/items").json()["items"]
-    assert items[0]["type"] == "standard"
-    assert items[0]["raw_data"]["standard_no"] == "GB/T 12345-2023"
-    assert items[0]["raw_data"]["ics_code"] == "29.140.40"
-    assert items[0]["raw_data"]["category"] == "国标"
-
-
 # ---------- D16: 源即参数(source 可选 / collector module / code 内联)----------
 
 def test_collect_no_source_no_collector_422(client):
@@ -575,3 +563,105 @@ def test_sources_dynamic_discovery(client, monkeypatch):
     assert inline is not None
     assert inline["code_hash"] == code_hash
     assert inline["success_count"] == 1
+
+
+# ---------- 零持久化新增: callback_url scheme 校验 / 容量上限 / 交付即清 ----------
+
+def test_callback_url_scheme_validation_422(client):
+    """CB-5 scheme 校验: ftp/file/空 scheme/无 netloc → 提交 422"""
+    for bad in ("ftp://example.com/x", "file:///etc/passwd", "not_a_url", ""):
+        r = client.post("/collect", json={"source": "ok", "callback_url": bad})
+        assert r.status_code == 422, bad
+
+
+def test_capacity_task_table_429(tmp_path):
+    """CAP-1 任务表上限: max_tasks=1,第二个 POST /collect → 429"""
+    from fastapi.testclient import TestClient
+    from platform.app import create_app
+    from platform.tests.conftest import (FAST_CALLBACK_OPTS, FAST_OPTS,
+                                         make_test_config)
+
+    cfg = make_test_config(storage_overrides={"max_tasks": 1})
+    app = create_app(cfg, scheduler_opts=dict(FAST_OPTS, **FAST_CALLBACK_OPTS))
+    with TestClient(app) as c:
+        r1 = c.post("/collect", json={"source": "ok"})
+        assert r1.status_code == 201
+        r2 = c.post("/collect", json={"source": "loose"})
+        assert r2.status_code == 429
+        assert "已满" in r2.json()["detail"]
+
+
+def test_sync_delivery_frees_items(client):
+    """LIF-1 交付即清(同步): /collect/sync 返回后 items 已释放,任务元数据保留"""
+    r = client.post("/collect/sync", json={"source": "ok"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "done"
+    assert len(body["items"]) == 3
+    task_id = body["task_id"]
+    # 任务仍可查(状态 200),但 items 已交付即清 → 空列表 + total=0
+    r2 = client.get(f"/tasks/{task_id}/items")
+    assert r2.status_code == 200
+    assert r2.json()["items"] == []
+    assert r2.json()["total"] == 0
+
+
+def _wait_callback_status(client, task_id, wanted, timeout=15.0):
+    """轮询任务直到 callback_status 达到目标值,返回任务 dict"""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        t = client.get(f"/tasks/{task_id}").json()
+        if t.get("callback_status") == wanted or t["status"] == wanted:
+            return t
+        time.sleep(0.05)
+    raise AssertionError(f"任务 {task_id} callback_status 未到 {wanted}")
+
+
+def test_callback_retry_then_success(client, callback_server):
+    """CB-2 回调重试后成功: stub 先 500×2 再 200 → delivered,stub 计次=3"""
+    callback_server["state"].responses = [500, 500]  # 消费式: 前两次 500,后续 200
+    r = client.post("/collect", json={"source": "ok",
+                                      "callback_url": callback_server["url"]})
+    assert r.status_code == 201
+    task_id = r.json()["task_id"]
+    t = _wait_callback_status(client, task_id, "delivered")
+    assert t["callback_status"] == "delivered"
+    assert t["status"] == "done"
+    assert len(callback_server["state"].requests) == 3  # 初次 + 2 次重试
+
+
+def test_callback_final_failure(client, callback_server):
+    """CB-3 回调最终失败: stub 恒 500 → failed + error=callback_failed + items 清空"""
+    callback_server["state"].responses = [500, 500, 500, 500]
+    r = client.post("/collect", json={"source": "ok",
+                                      "callback_url": callback_server["url"]})
+    task_id = r.json()["task_id"]
+    t = _wait_callback_status(client, task_id, "failed")
+    assert t["status"] == "failed"
+    assert t["error"] == "callback_failed"
+    assert t["callback_status"] == "failed"
+    assert len(callback_server["state"].requests) == 4  # 初次 + 3 次重试
+    assert client.get(f"/tasks/{task_id}/items").json()["items"] == []  # 结果丢弃
+
+
+def test_callback_timeout(client, callback_server):
+    """CB-4 回调超时: stub 处理延迟 > timeout_s → 触发重试,最终 failed"""
+    callback_server["state"].delay = 2.0  # > callback_timeout_s(1s)
+    r = client.post("/collect", json={"source": "ok",
+                                      "callback_url": callback_server["url"]})
+    task_id = r.json()["task_id"]
+    t = _wait_callback_status(client, task_id, "failed")
+    assert t["status"] == "failed"
+    assert t["error"] == "callback_failed"
+
+
+def test_callback_no_redirect_follow(client, callback_server):
+    """CB-6 不跟随重定向: stub 返回 302 → 判定失败并重试(不落 302 目标)"""
+    callback_server["state"].responses = [302, 302, 302, 302]
+    r = client.post("/collect", json={"source": "ok",
+                                      "callback_url": callback_server["url"]})
+    task_id = r.json()["task_id"]
+    t = _wait_callback_status(client, task_id, "failed")
+    assert t["status"] == "failed"
+    assert t["error"] == "callback_failed"
+    assert len(callback_server["state"].requests) == 4

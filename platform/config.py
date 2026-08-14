@@ -3,7 +3,8 @@
 
 - 统一配置入口: server(host/port/max_workers/task_timeout_s)
                 + sources(enabled/module/params)
-                + storage(db_path/dedup_ttl_days)
+                + storage(ttl_seconds/max_tasks/max_items_per_task/free_on_full_consume)
+                + callback(timeout_s/retry_delays)
                 + collectors_extra_dirs(外部采集器目录, 可选)
 - config.d 片段: 主配置文件同目录下 config.d/*.yaml 启动时与主配置**深合并**
   (sources 合并/覆盖, server/storage 以主配置为准)
@@ -244,17 +245,23 @@ def get_server_config() -> dict:
 
 
 def get_storage_config() -> dict:
-    """storage 段: db_path(相对路径基于项目根解析)/dedup_ttl_days/清理 TTL"""
+    """storage 段(零持久化): 内存 TTL / 容量上限 / 拉取即清开关"""
     storage = get_config().get("storage", {})
-    db_path = storage.get("db_path", "data/briefnexus.db")
-    if not os.path.isabs(db_path):
-        db_path = os.path.join(PROJECT_ROOT, db_path)
     return {
-        "db_path": os.path.abspath(db_path),
-        "dedup_ttl_days": int(storage.get("dedup_ttl_days", 90)),
-        # 每日清理(D13)参数: 已消费 items 保留天数 / 完成任务归档天数
-        "consumed_ttl_days": int(storage.get("consumed_ttl_days", 90)),
-        "task_archive_days": int(storage.get("task_archive_days", 30)),
+        "ttl_seconds": int(storage.get("ttl_seconds", 3600)),
+        "max_tasks": int(storage.get("max_tasks", 1000)),
+        "max_items_per_task": int(storage.get("max_items_per_task", 10000)),
+        "free_on_full_consume": bool(storage.get("free_on_full_consume", True)),
+    }
+
+
+def get_callback_config() -> dict:
+    """callback 段: 回调 POST 超时 / 指数退避(初次后重试)"""
+    callback = get_config().get("callback", {})
+    delays = callback.get("retry_delays", [2, 4, 8])
+    return {
+        "timeout_s": int(callback.get("timeout_s", 10)),
+        "retry_delays": tuple(delays),
     }
 
 
