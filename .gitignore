@@ -18,6 +18,10 @@ intel/output/
 # Editor
 *.swp
 *.swo
+
+# 业务挂载配置片段（public 仓不入库：含本地路径/业务目录，见 README 采集器分流规则）
+platform/config.d/10_*.yaml
+platform/config.d/*_ext_*.yaml
 *~
 .DS_Store
 
