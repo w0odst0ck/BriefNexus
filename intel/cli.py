@@ -61,11 +61,22 @@ def _load_config(path: str | None = None) -> dict:
         return {}
 
 
-def _sess():
+def _sess(render: bool = False, render_timeout: float = 30.0):
+    """构造会话; render=True 时包一层 RenderAwareSession(渲染感知)
+
+    默认 render=False 行为与改动前逐字节一致(裸 requests.Session)。
+    渲染仅对 sources.yaml 声明 render: true 的源启用。
+    """
     import requests
     s = requests.Session()
     s.headers["User-Agent"] = random.choice(UA)
     s.headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    if render:
+        # 延迟 import: 不渲染路径零开销, 且 render 模块不可用时不影响静态源
+        from intel.core.render import RenderAwareSession, RenderExecutor
+        return RenderAwareSession(
+            s, RenderExecutor(default_timeout=render_timeout), timeout=render_timeout
+        )
     return s
 
 
@@ -113,7 +124,8 @@ def cmd_run(max_age: int = 7, fmt: str = "json", use_llm: bool = False,
     logger.info("=" * 50)
 
     # 2. 采集
-    sess = _sess()
+    sources_cfg = (config or {}).get("sources", {}) or {}
+    plain_sess = _sess()  # 非渲染源共享同一 plain Session(与现状一致)
     all_items = []
 
     # 持久化去重
@@ -123,6 +135,9 @@ def cmd_run(max_age: int = 7, fmt: str = "json", use_llm: bool = False,
     for collector in collectors:
         logger.info("[%s] 采集...", collector.display_name)
         try:
+            src_cfg = sources_cfg.get(collector.source_name, {}) or {}
+            # 严格布尔判定: 仅 render is True 走渲染, 其余一律 plain(与现状一致)
+            sess = _sess(render=True) if src_cfg.get("render") is True else plain_sess
             items = collector.crawl(sess)
             # 跨天去重（标题 MD5）
             new_titles = dedup.filter_new([it.title for it in items])
@@ -241,8 +256,8 @@ def cmd_check(domain: str | None = None, timeout: float = 20.0, interval: float 
         display = collector.display_name or name
         cls = classes.get(name) or collector
         domains = ",".join(getattr(cls, "domains", []) or [])
-
-        sess = _sess()
+        src_cfg = (config or {}).get("sources", {}).get(name, {}) or {}
+        sess = _sess(render=(src_cfg.get("render") is True))
         start = time.monotonic()
         items, error = _crawl_once(collector, sess, timeout)
         duration = time.monotonic() - start

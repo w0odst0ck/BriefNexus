@@ -34,3 +34,4 @@ plan/
 *.ini
 *.db
 executor/
+.flow/

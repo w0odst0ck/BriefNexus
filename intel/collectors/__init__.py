@@ -8,3 +8,4 @@ from . import eastmoney
 from . import cninfo
 from . import arxiv_perception
 from . import adas_vehicle_intl
+from . import boss_zhipin

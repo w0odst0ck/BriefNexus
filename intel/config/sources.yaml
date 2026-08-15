@@ -30,3 +30,9 @@ sources:
     enabled: true
     max_age: 30
     notes: "ADAS & Autonomous Vehicle International 行业季刊"
+
+  boss_zhipin:
+    enabled: true
+    render: true
+    max_age: 7
+    notes: "BOSS 直聘搜索页 — 浏览器渲染验证源(反爬可能拦截, 0 条为预期)"
