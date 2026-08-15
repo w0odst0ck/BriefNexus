@@ -33,3 +33,4 @@ memory/
 plan/
 *.ini
 *.db
+executor/

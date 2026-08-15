@@ -1,0 +1,5 @@
+# intel 模块 lint 配置
+# BLE001: 巡检/采集边界必须盲捕异常——采集器(第三方代码)可能抛任意异常，
+#         check/run 需兜底分类为 failed，不能因单源异常中断整体巡检
+# RUF012: 采集器/测试 stub 故意用可变类属性(domains 声明)，与 platform/ruff.toml 一致
+lint.ignore = ["BLE001", "RUF012"]
