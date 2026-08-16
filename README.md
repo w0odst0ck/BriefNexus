@@ -291,9 +291,14 @@ sources:
 | systemd | `briefnexus-api.service`（:9000，Restart=always，开机自启） |
 | healthcheck cron | 每小时 `脚本/briefnexus_healthcheck.sh`，失败飞书告警 |
 | 日志 | `journalctl -u briefnexus-api -f` |
-| 测试 | `.venv/bin/pytest platform/tests/ -q` |
+| 测试 | `cd /tmp && .venv/bin/pytest /path/to/BriefNexus/platform/tests -q` |
+| 启动 | `.venv/bin/python platform/run.py`（或 systemd 服务，已配置开机自启） |
 
-> ⚠️ 注意：`platform/` 包名与 Python 标准库 `platform` 同名——启动/测试请走 `platform/run.py` 和项目根下的 pytest，不要裸 `uvicorn platform.app:app`。
+> ⚠️ **`platform/` 包名与 Python 标准库同名——必须从项目根外跑 pytest**：pytest 启动时
+> `uuid.py` 的 `import platform` 会被项目包遮蔽而崩溃（conftest 的弹缓存机制加载太晚）。
+> 正确姿势：`cd /tmp` 再跑（conftest 自动插入项目根 + 弹出标准库缓存）。
+> 同理不要裸 `python -c "import platform.app"` / `uvicorn platform.app:app`（pydantic 会假性损坏）——
+> 一律走 `platform/run.py`。
 
 ---
 
