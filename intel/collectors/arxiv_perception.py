@@ -7,14 +7,16 @@ arXiv — 自动驾驶感知 + 光照/天气 学术论文追踪
   - lighting autonomous driving benchmark
 
 用法: 自动进入 intel 采集管道，按 config 设置关键词运行
+
+实现: APICollector 声明式实例 —— 抓取循环/去重/过滤/limit/限速全部
+由基类承担，本模块只保留关键词常量 + Atom XML 归一化 hook。
 """
 
 import logging
 import re
-import time
-from datetime import datetime, timezone
+from typing import ClassVar
 
-from intel.core.base import BaseCollector, NewsItem
+from intel.core.api import APICollector
 from intel.core.registry import register
 
 logger = logging.getLogger("intel.arxiv_perception")
@@ -37,93 +39,63 @@ SEARCH_QUERIES = [
 
 
 @register("arxiv_perception")
-class ArxivPerceptionCollector(BaseCollector):
+class ArxivPerceptionCollector(APICollector):
     source_name = "arxiv_perception"
-    domains = ["self_driving"]
     display_name = "arXiv (感知+光照)"
+    domains: ClassVar[list] = ["self_driving"]
+    PARAM_SCHEMA: ClassVar[dict] = {"max_age": {"type": "int", "min": 1, "max": 90}}
 
-    def crawl(self, sess) -> list[NewsItem]:
-        items = []
-        seen_ids = set()
+    API_SPEC: ClassVar[dict] = {
+        "endpoint": ARXIV_API,
+        "method": "GET",
+        "params": {"sortBy": "submittedDate", "sortOrder": "descending",
+                   "start": 0, "max_results": 10},
+        "queries": [{"search_query": q} for q in SEARCH_QUERIES],
+        "pagination": None,
+        "limit": 40, "timeout": 30, "delay": 1.5,
+        "domain": "学术", "sector": "perception_lighting",
+        "field_map": {
+            "title":    {"path": "title", "transform": "collapse_ws"},
+            "url":      {"path": "id"},
+            "date_obj": {"path": "published", "transform": "parse_date",
+                         "fmts": ["%Y-%m-%d"], "tz": "utc"},
+            "_authors": {"path": "authors", "transform": "join_names",
+                         "sep": ", ", "limit": 3, "suffix": " et al."},
+            "_summary": {"path": "summary", "transform": "truncate", "max": 200},
+            "summary":  {"transform": "template", "template": "[{_authors}] {_summary}"},
+        },
+    }
 
-        for query in SEARCH_QUERIES:
-            if len(items) >= 40:
-                break  # 限制单次采集量
+    def _extract_records(self, resp, spec) -> list[dict]:
+        """唯一非 JSON 覆盖：Atom XML → list[dict]。
 
-            params = {
-                "search_query": query,
-                "start": 0,
-                "max_results": 10,
-                "sortBy": "submittedDate",
-                "sortOrder": "descending",
-            }
+        复用现有 re 提取逻辑，行为与改造前逐字节等价：title 折叠空白、
+        published 保留原始字符串（由 field_map 的 parse_date 取前 10 字符）、
+        summary 仅 strip 不折叠、authors 为 name 元素原样列表。
+        """
+        content = resp.text
+        records = []
+        for entry in re.findall(r'<entry>(.*?)</entry>', content, re.DOTALL):
+            id_match = re.search(r'<id>(.*?)</id>', entry)
+            url = id_match.group(1).strip() if id_match else ""
 
-            try:
-                r = sess.get(ARXIV_API, params=params, timeout=30)
-                r.raise_for_status()
+            title_match = re.search(r'<title>(.*?)</title>', entry, re.DOTALL)
+            title = title_match.group(1).strip() if title_match else ""
+            title = re.sub(r'\s+', ' ', title)
 
-                # 解析 Atom XML
-                content = r.text
-                entries = re.findall(r'<entry>(.*?)</entry>', content, re.DOTALL)
+            date_match = re.search(r'<published>(.*?)</published>', entry)
+            published = date_match.group(1).strip() if date_match else ""
 
-                for entry in entries:
-                    # 提取 arXiv ID
-                    id_match = re.search(r'<id>(.*?)</id>', entry)
-                    url = id_match.group(1).strip() if id_match else ""
+            summary_match = re.search(r'<summary>(.*?)</summary>', entry, re.DOTALL)
+            summary = summary_match.group(1).strip() if summary_match else ""
 
-                    # 提取 title
-                    title_match = re.search(r'<title>(.*?)</title>', entry, re.DOTALL)
-                    title = title_match.group(1).strip() if title_match else ""
-                    title = re.sub(r'\s+', ' ', title)
+            authors = re.findall(r'<name>(.*?)</name>', entry)
 
-                    # 提取 published date
-                    date_match = re.search(r'<published>(.*?)</published>', entry)
-                    date_obj = None
-                    if date_match:
-                        try:
-                            date_str = date_match.group(1).strip()[:10]
-                            date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                        except Exception:  # noqa: S110 — 日期解析失败则忽略，采集器兜底哲学
-                            pass
-
-                    # 提取摘要
-                    summary_match = re.search(r'<summary>(.*?)</summary>', entry, re.DOTALL)
-                    summary = summary_match.group(1).strip()[:400] if summary_match else ""
-
-                    # 提取作者/机构
-                    authors = re.findall(r'<name>(.*?)</name>', entry)
-                    author_str = ", ".join(authors[:3])
-                    if len(authors) > 3:
-                        author_str += " et al."
-
-                    dedup_key = url or title[:30]
-                    if dedup_key in seen_ids:
-                        continue
-                    seen_ids.add(dedup_key)
-
-                    if not title or not url:
-                        continue
-
-                    # 过时论文跳过
-                    if date_obj and not self._is_recent(date_obj):
-                        continue
-
-                    item = NewsItem(
-                        title=title,
-                        url=url,
-                        summary=f"[{author_str}] {summary[:200]}",
-                        source=self.display_name,
-                        domain="学术",
-                        date_obj=date_obj,
-                        sector="perception_lighting",
-                    )
-                    items.append(item)
-
-            except Exception as e:
-                logger.warning("arXiv 查询 '%s...' 失败: %s", query[:30], e)
-                continue
-
-            time.sleep(3)  # arXiv API 限速: 几秒一次
-
-        logger.info("arXiv 新论文: %d 条", len(items))
-        return items
+            records.append({
+                "title": title,
+                "id": url,
+                "published": published,
+                "summary": summary,
+                "authors": authors,
+            })
+        return records
