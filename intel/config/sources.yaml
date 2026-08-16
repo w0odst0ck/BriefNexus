@@ -36,3 +36,15 @@ sources:
     render: true
     max_age: 7
     notes: "BOSS 直聘搜索页 — 浏览器渲染验证源(反爬可能拦截, 0 条为预期)"
+
+  eastmoney:
+    enabled: true
+    render: true
+    max_age: 7
+    notes: "东方财富要闻 — CDP 渲染绕 WAF(原 418), 2026-08-16 实测 10 items"
+
+  cninfo:
+    enabled: true
+    render: true
+    max_age: 7
+    notes: "巨潮资讯 — CDP 渲染绕 WAF(原 403), 2026-08-16 实测 20 items"

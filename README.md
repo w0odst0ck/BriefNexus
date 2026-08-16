@@ -67,18 +67,20 @@
 
 | 层 | 能力 | 状态 | 说明 |
 |:--|:--|:--|:--|
-| C1 采集层 | 静态页面抓取 | ✅ 已实现 | BaseCollector（内置 9 源范式） |
+| C1 采集层 | 静态页面抓取 | ✅ 已实现 | BaseCollector（内置 10 源范式） |
 | C1 采集层 | 健康巡检 | ✅ 已实现 | `intel check`（2026-08-15） |
-| C1 采集层 | RSS/Atom 订阅 | 🚧 规划中 | RSSHub 本地实例已部署（:1200）；RSSHubCollector 接入中 |
+| C1 采集层 | RSS/Atom 订阅 | ✅ 已实现 | RSSHub 本地实例 :1200 + RSSHubCollector（12 源，`research-collectors` 仓） |
 | C1 采集层 | JSON API 适配 | 🚧 规划中 | APICollector 基类（arxiv 范式泛化） |
-| C1 采集层 | 浏览器渲染（CDP） | 🚧 规划中 | chrome-devtools-mcp 集成（WAF/JS 源统一解法） |
-| C1 采集层 | 文档/PDF 解析 | 🚧 规划中 | MinerU 集成（标准/政策全文检索） |
-| C1 采集层 | 通用变更监控 | 🚧 规划中 | changedetection.io（部署中）＋快照 diff |
+| C1 采集层 | 浏览器渲染（CDP） | ✅ 已实现 | render.py 子进程隔离 + 声明式 `render: true`；BOSS/东财/巨潮 3 源实装 |
+| C1 采集层 | 文档/PDF 解析 | ✅ 已实现 | MinerU 子进程隔离（research-collectors pdf_parse，真实解析验证） |
+| C1 采集层 | 通用变更监控 | ✅ 已实现 | changedetection.io :5000 + `compare_snapshots --push` 快照 diff |
 | C2 处理层 | 去重/分类 | ✅ 部分 | 去重 ✅；分类规则待补全 |
 | C2 处理层 | LLM 增强 | 🚧 规划中 | 摘要/翻译/实体抽取（DeepSeek） |
 | C3 交付层 | 报告（md/json） | ✅ 已实现 | 模板化待增强 |
-| C3 交付层 | 变更预警推送 | 🚧 规划中 | diff 触发 → 飞书（feishu_push.py） |
+| C3 交付层 | 变更预警推送 | ✅ 已实现 | `compare_snapshots --push` → feishu_push.py（2026-08-15） |
 | C3 交付层 | 调度 cron 化 | 🚧 规划中 | command payload 模式 |
+
+> 🏆 **WAF 攻坚战果（2026-08-16）**：CDP 真渲染解锁后，东方财富（原 418）→ 200/10 条、巨潮资讯（原 403）→ 200/20 条，长期遗留的两大 WAF 源已正式接入（sources.yaml `render: true`）。
 
 ---
 
