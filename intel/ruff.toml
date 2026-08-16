@@ -3,3 +3,7 @@
 #         check/run 需兜底分类为 failed，不能因单源异常中断整体巡检
 # RUF012: 采集器/测试 stub 故意用可变类属性(domains 声明)，与 platform/ruff.toml 一致
 lint.ignore = ["BLE001", "RUF012"]
+
+# collectors/__init__.py: 注册模式文件——import 是触发各采集器模块级 @register 的副作用，
+# 不能删也不能重排(重排会改变注册顺序)。F401 由注册副作用引起；I001 若自动排序会破坏顺序。
+lint.per-file-ignores = { "collectors/__init__.py" = ["F401", "I001"] }

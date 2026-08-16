@@ -576,10 +576,10 @@ def test_callback_url_scheme_validation_422(client):
 
 def test_capacity_task_table_429(tmp_path):
     """CAP-1 任务表上限: max_tasks=1,第二个 POST /collect → 429"""
-    from fastapi.testclient import TestClient
     from platform.app import create_app
-    from platform.tests.conftest import (FAST_CALLBACK_OPTS, FAST_OPTS,
-                                         make_test_config)
+    from platform.tests.conftest import FAST_CALLBACK_OPTS, FAST_OPTS, make_test_config
+
+    from fastapi.testclient import TestClient
 
     cfg = make_test_config(storage_overrides={"max_tasks": 1})
     app = create_app(cfg, scheduler_opts=dict(FAST_OPTS, **FAST_CALLBACK_OPTS))

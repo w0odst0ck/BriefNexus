@@ -21,7 +21,8 @@ import time
 import traceback
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from platform import config, delivery, memory_store as store
+from platform import config, delivery
+from platform import memory_store as store
 
 import requests
 

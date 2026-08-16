@@ -2,11 +2,11 @@
 NVIDIA Blog — 企业官方博客（AI/GPGPU/机器人/HPC）
 """
 
-import logging, re, time
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+import logging
+from datetime import datetime, timezone
+
+from intel.core.base import BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.nvidia")
 
@@ -19,7 +19,7 @@ class NvidiaBlogCollector(BaseCollector):
     domains = ["semiconductor"]
     display_name = "NVIDIA Blog"
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         try:
             import feedparser

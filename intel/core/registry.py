@@ -19,7 +19,7 @@ _COLLECTORS = {}
 logger = logging.getLogger("intel.registry")
 
 
-def register(name: str = None):
+def register(name: str | None = None):
     """装饰器：注册采集器到全局注册表"""
     def decorator(cls):
         key = name or cls.__name__
@@ -31,7 +31,7 @@ def register(name: str = None):
     return decorator
 
 
-def get_collector_classes(config: dict = None, domains: str = None) -> dict:
+def get_collector_classes(config: dict | None = None, domains: str | None = None) -> dict:
     """获取采集器类字典
 
     Args:
@@ -61,7 +61,7 @@ def get_collector_classes(config: dict = None, domains: str = None) -> dict:
                     result[name] = cls
 
     if domains:
-        domain_set = set(d.strip() for d in domains.split(","))
+        domain_set = {d.strip() for d in domains.split(",")}
         result = {
             n: c for n, c in result.items()
             if hasattr(c, "domains") and domain_set & set(c.domains)
@@ -70,7 +70,7 @@ def get_collector_classes(config: dict = None, domains: str = None) -> dict:
     return result
 
 
-def instantiate_collectors(config: dict = None, domains: str = None) -> list:
+def instantiate_collectors(config: dict | None = None, domains: str | None = None) -> list:
     """实例化启用的采集器
 
     Args:

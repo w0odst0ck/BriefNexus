@@ -351,8 +351,7 @@ class MemoryStore:
                     a = agg[t["source"]] = {
                         "source": t["source"], "last_used": t["created_at"],
                         "success_count": 0, "collector_spec": None}
-                if t["created_at"] > a["last_used"]:
-                    a["last_used"] = t["created_at"]
+                a["last_used"] = max(a["last_used"], t["created_at"])
                 if t["status"] == STATUS_DONE:
                     a["success_count"] += 1
                 spec = t.get("collector_spec")

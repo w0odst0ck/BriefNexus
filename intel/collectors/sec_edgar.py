@@ -2,12 +2,13 @@
 SEC EDGAR 8-K — 美国证监会备案（科技巨头重大事件披露）
 """
 
-import logging, re, time, xml.etree.ElementTree as ET
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
-from bs4 import BeautifulSoup
+import logging
+import re
+import xml.etree.ElementTree as ET
+from datetime import datetime
+
+from intel.core.base import BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.sec")
 
@@ -53,7 +54,7 @@ class SECEdgarCollector(BaseCollector):
     domains = ["finance", "semiconductor"]
     display_name = "SEC EDGAR"
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         try:
             # 设置 SEC 所需的 User-Agent
@@ -80,7 +81,7 @@ class SECEdgarCollector(BaseCollector):
                 if pub:
                     try:
                         date_obj = datetime.fromisoformat(pub.replace("Z", "+00:00"))
-                    except:
+                    except Exception:  # noqa: S110 — 日期解析失败则忽略，采集器兜底哲学
                         pass
 
                 # 检查是否相关（科技公司 or 关键词匹配）

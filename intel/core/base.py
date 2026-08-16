@@ -5,9 +5,8 @@
 """
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 CST = timezone(timedelta(hours=8))
 logger = logging.getLogger("intel.collector")
@@ -19,7 +18,7 @@ class NewsItem:
     title: str
     url: str
     summary: str = ""
-    date_obj: Optional[datetime] = None
+    date_obj: datetime | None = None
     source: str = ""
     domain: str = ""
     sector: str = ""
@@ -40,11 +39,11 @@ class BaseCollector(ABC):
         self.cutoff = datetime.now(CST) - timedelta(days=max_age)
 
     @abstractmethod
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         """采集该源的最新情报"""
         ...
 
-    def _is_recent(self, date_obj: Optional[datetime]) -> bool:
+    def _is_recent(self, date_obj: datetime | None) -> bool:
         if date_obj is None:
             return True
         return date_obj >= self.cutoff

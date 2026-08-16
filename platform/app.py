@@ -32,7 +32,8 @@ from scripts._dotenv import load_project_env
 
 load_project_env()
 
-from platform import config, delivery, memory_store as store, scheduler
+from platform import config, delivery, scheduler
+from platform import memory_store as store
 from platform.scheduler import Scheduler
 
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -161,7 +162,6 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
     else:
         config.load_config()
     server = config.get_server_config()
-    storage_cfg = config.get_storage_config()
     callback_cfg = config.get_callback_config()
 
     opts = dict(scheduler_opts or {})

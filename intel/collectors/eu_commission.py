@@ -2,11 +2,11 @@
 EU Commission Press Corner — 欧盟委员会官方新闻稿（AI法案/数字政策/网络安全/贸易）
 """
 
-import logging, re, time
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+import logging
+from datetime import datetime, timezone
+
+from intel.core.base import BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.eu")
 
@@ -19,7 +19,7 @@ class EUCommissionCollector(BaseCollector):
     domains = ["finance", "self_driving", "semiconductor"]
     display_name = "EU Commission"
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         try:
             import feedparser

@@ -1,10 +1,10 @@
 """报告生成器"""
 import json
-import os
 import logging
+import os
 from datetime import datetime
-from typing import List
-from intel.core.base import NewsItem, CST
+
+from intel.core.base import CST, NewsItem
 
 logger = logging.getLogger("intel.reporter")
 
@@ -21,7 +21,7 @@ SECTORS = [
 TODAY = datetime.now(CST).strftime("%Y-%m-%d")
 NOW = datetime.now(CST).strftime("%Y-%m-%dT%H:%M:%S+08:00")
 
-def build_report(items: List[NewsItem], fmt: str = "json", output_dir: str = None) -> str:
+def build_report(items: list[NewsItem], fmt: str = "json", output_dir: str | None = None) -> str:
     if fmt == "json":
         content = _build_json(items)
     else:
@@ -37,14 +37,14 @@ def build_report(items: List[NewsItem], fmt: str = "json", output_dir: str = Non
 
     return content
 
-def _build_json(items: List[NewsItem]) -> str:
+def _build_json(items: list[NewsItem]) -> str:
     report = {
         "meta": {
             "generated_at": NOW,
             "date": TODAY,
             "total_items": len(items),
-            "sources": sorted(set(it.source for it in items if it.source)),
-            "sectors": sorted(set(it.sector for it in items if it.sector)),
+            "sources": sorted({it.source for it in items if it.source}),
+            "sectors": sorted({it.sector for it in items if it.sector}),
         },
         "items": [{
             "title": it.title,
@@ -58,7 +58,7 @@ def _build_json(items: List[NewsItem]) -> str:
     }
     return json.dumps(report, ensure_ascii=False, indent=2)
 
-def _build_md(items: List[NewsItem]) -> str:
+def _build_md(items: list[NewsItem]) -> str:
     grouped = {sk: [] for _, sk, _ in SECTORS}
     for it in items:
         grouped.setdefault(it.sector, []).append(it)

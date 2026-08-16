@@ -2,11 +2,11 @@
 东方财富 — A股公告/要闻（上证指数要闻）
 """
 
-import logging, re, json
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+import logging
+from datetime import datetime
+
+from intel.core.base import CST, BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.eastmoney")
 
@@ -22,7 +22,7 @@ class EastMoneyCollector(BaseCollector):
     domains = ["finance"]
     display_name = "东方财富"
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         try:
             # 主源：东方财富要闻列表（服务端渲染）
@@ -41,7 +41,7 @@ class EastMoneyCollector(BaseCollector):
 
         return items
 
-    def _parse_article_list(self, html: str, base_url: str) -> List[NewsItem]:
+    def _parse_article_list(self, html: str, base_url: str) -> list[NewsItem]:
         """解析 finance.eastmoney.com 的要闻文章列表"""
         items = []
         try:
@@ -93,7 +93,7 @@ class EastMoneyCollector(BaseCollector):
 
         return items[:30]
 
-    def _crawl_fallback(self, sess) -> List[NewsItem]:
+    def _crawl_fallback(self, sess) -> list[NewsItem]:
         """备用方案：从东方财富首页解析要闻"""
         items = []
         try:
@@ -173,7 +173,7 @@ class EastMoneyCollector(BaseCollector):
         return items
 
     @staticmethod
-    def _parse_date(raw) -> Optional[datetime]:
+    def _parse_date(raw) -> datetime | None:
         """尝试多种时间格式"""
         if isinstance(raw, (int, float)):
             # 毫秒时间戳

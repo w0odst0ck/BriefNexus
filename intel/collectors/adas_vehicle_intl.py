@@ -10,11 +10,12 @@ ADAS & Autonomous Vehicle International — 行业出版物
   - web_fetch 读取公开文章页面
 """
 
-import logging, re, json, urllib.parse
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+import logging
+import re
+from datetime import datetime
+
+from intel.core.base import CST, BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.adas")
 
@@ -35,7 +36,7 @@ class AdasVehicleCollector(BaseCollector):
     display_name = "ADAS & Autonomous Vehicle Intl"
     domains = ["self_driving"]
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "

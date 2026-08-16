@@ -1,6 +1,6 @@
 """规则分类器"""
 import re
-from typing import List
+
 from intel.core.base import NewsItem
 
 SECTORS = [
@@ -14,7 +14,7 @@ SECTORS = [
 ]
 SECTOR_KEYS = {s[1] for s in SECTORS}
 
-def classify(items: List[NewsItem]):
+def classify(items: list[NewsItem]):
     for it in items:
         it.sector = _classify(it.title)
 

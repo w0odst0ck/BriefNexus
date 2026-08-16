@@ -2,12 +2,13 @@
 White House Briefing Room — 美国政府官方声明（科技/AI/贸易/经济）
 """
 
-import logging, re, time
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+import logging
+from datetime import datetime
+
 from bs4 import BeautifulSoup
+
+from intel.core.base import BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.whitehouse")
 
@@ -21,7 +22,7 @@ class WhiteHouseCollector(BaseCollector):
     domains = ["finance", "self_driving", "semiconductor"]
     display_name = "White House"
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         try:
             r = sess.get(WH_URL, timeout=30)
@@ -44,7 +45,7 @@ class WhiteHouseCollector(BaseCollector):
                 if time_el and time_el.get("datetime"):
                     try:
                         date_obj = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00"))
-                    except:
+                    except Exception:  # noqa: S110 — 日期解析失败则忽略，采集器兜底哲学
                         pass
 
                 if not title:

@@ -1,0 +1,7 @@
+# platform API 服务运行时依赖（2026-08-16 盘点补齐）
+# 版本下限 = 本机 .venv 实测版本；平台必须单 worker 进程（内存态存储，见 README）
+
+fastapi>=0.141.1
+uvicorn>=0.52.1
+pydantic>=2.13.4
+requests>=2.34.2

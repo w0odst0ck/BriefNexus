@@ -137,7 +137,7 @@ def callback_server():
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _CallbackHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    host, port = server.server_address
+    _host, port = server.server_address
     yield {"url": f"http://127.0.0.1:{port}/cb", "state": state}
     server.shutdown()
     server.server_close()

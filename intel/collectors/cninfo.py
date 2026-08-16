@@ -2,12 +2,13 @@
 巨潮资讯 — A股上市公司公告
 """
 
-import logging, re, json
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+import logging
+import re
+from datetime import datetime
 from urllib.parse import urljoin
+
+from intel.core.base import CST, BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.cninfo")
 
@@ -31,7 +32,7 @@ class CninfoCollector(BaseCollector):
     display_name = "巨潮资讯"
     domains = ["finance"]
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         try:
             # 尝试 POST API
@@ -123,7 +124,7 @@ class CninfoCollector(BaseCollector):
                         date_obj=date_obj,
                     )
                     items.append(item)
-                except Exception:
+                except Exception:  # noqa: S112 — 单条公告解析失败则跳过，采集器兜底哲学
                     continue
 
         except Exception as e:
@@ -132,7 +133,7 @@ class CninfoCollector(BaseCollector):
 
         return items
 
-    def _crawl_fallback(self, sess) -> List[NewsItem]:
+    def _crawl_fallback(self, sess) -> list[NewsItem]:
         """备用方案：从巨潮资讯首页抓取最新公告列表"""
         items = []
         try:

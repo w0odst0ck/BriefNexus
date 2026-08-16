@@ -1,0 +1,9 @@
+# intel 采集框架运行时依赖（2026-08-16 盘点补齐）
+# 版本下限 = 本机 .venv 实测版本；缺失清单曾导致 feedparser 未声明（08-16 修复）
+# 渲染子进程（render_worker.py）在独立 venv 运行（/home/l/venvs/playwright），
+# playwright 不在此清单；mineru PDF 解析同理（research-collectors 侧独立 venv）
+
+requests>=2.34.2
+beautifulsoup4>=4.15.0
+PyYAML>=6.0.3
+feedparser>=6.0.14

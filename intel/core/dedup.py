@@ -11,8 +11,7 @@ import hashlib
 import json
 import logging
 import os
-from datetime import datetime, timezone, timedelta
-from typing import Set, List
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("intel.dedup")
 
@@ -23,7 +22,7 @@ MAX_DAYS = 30  # 保留 30 天去重历史
 class DedupStore:
     """跨天去重存储"""
 
-    def __init__(self, store_path: str = None, max_days: int = MAX_DAYS):
+    def __init__(self, store_path: str | None = None, max_days: int = MAX_DAYS):
         if store_path is None:
             # 默认放在 output 目录下
             base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,7 +38,7 @@ class DedupStore:
             try:
                 with open(self.store_path, "r") as f:
                     self._data = json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
+            except (OSError, json.JSONDecodeError) as e:
                 logger.warning("去重存储加载失败，重置: %s", e)
                 self._data = {}
 
@@ -54,19 +53,19 @@ class DedupStore:
         key = self._md5(title)
         return key in self._data
 
-    def mark_seen(self, title: str, date: str = None):
+    def mark_seen(self, title: str, date: str | None = None):
         """标记标题为已采集"""
         key = self._md5(title)
         if key not in self._data:
             self._data[key] = date or datetime.now(CST).strftime("%Y-%m-%d")
 
-    def mark_seen_batch(self, titles: List[str], date: str = None):
+    def mark_seen_batch(self, titles: list[str], date: str | None = None):
         """批量标记"""
         today = date or datetime.now(CST).strftime("%Y-%m-%d")
         for t in titles:
             self.mark_seen(t, today)
 
-    def filter_new(self, titles: List[str]) -> List[str]:
+    def filter_new(self, titles: list[str]) -> list[str]:
         """返回不在去重存储中的新标题"""
         return [t for t in titles if not self.is_seen(t)]
 

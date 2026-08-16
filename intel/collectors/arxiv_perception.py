@@ -9,11 +9,13 @@ arXiv — 自动驾驶感知 + 光照/天气 学术论文追踪
 用法: 自动进入 intel 采集管道，按 config 设置关键词运行
 """
 
-import logging, re, time, json
-from datetime import datetime, timezone, timedelta
-from typing import List, Optional
+import logging
+import re
+import time
+from datetime import datetime, timezone
+
+from intel.core.base import BaseCollector, NewsItem
 from intel.core.registry import register
-from intel.core.base import BaseCollector, NewsItem, CST
 
 logger = logging.getLogger("intel.arxiv_perception")
 
@@ -40,7 +42,7 @@ class ArxivPerceptionCollector(BaseCollector):
     domains = ["self_driving"]
     display_name = "arXiv (感知+光照)"
 
-    def crawl(self, sess) -> List[NewsItem]:
+    def crawl(self, sess) -> list[NewsItem]:
         items = []
         seen_ids = set()
 
@@ -81,7 +83,7 @@ class ArxivPerceptionCollector(BaseCollector):
                         try:
                             date_str = date_match.group(1).strip()[:10]
                             date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                        except:
+                        except Exception:  # noqa: S110 — 日期解析失败则忽略，采集器兜底哲学
                             pass
 
                     # 提取摘要
@@ -92,7 +94,7 @@ class ArxivPerceptionCollector(BaseCollector):
                     authors = re.findall(r'<name>(.*?)</name>', entry)
                     author_str = ", ".join(authors[:3])
                     if len(authors) > 3:
-                        author_str += f" et al."
+                        author_str += " et al."
 
                     dedup_key = url or title[:30]
                     if dedup_key in seen_ids:
