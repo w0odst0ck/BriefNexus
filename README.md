@@ -279,6 +279,11 @@ sources:
 
 **开发红线**：必须继承 BaseCollector 并实现 crawl()；必须声明 PARAM_SCHEMA；结构化数据放 raw_data（不塞 summary）；不得在采集器内直接访问平台存储。
 
+> ⚠️ **config.d 多片段坑（2026-08-16 实踩）**：config.d 合并对 **list 是覆盖语义**——多个片段
+> 各写 `collectors_extra_dirs` 会互相覆盖（文件名排序靠后者赢），导致前一个项目的采集器全部 422。
+> 正确姿势：`collectors_extra_dirs` **集中声明在一个排序最早的片段**（如 `config.d/00_collectors_dirs.yaml`），
+> 业务片段（`10_*.yaml`）只声明各自 `sources`。
+
 > ⚠️ **代码内联（collector.code）为实验性功能**：仅限受信本机调用方，默认关闭（ALLOW_INLINE_CODE=true 才启用）。
 > 生产/对外请使用 **collector.module 引用**（调用方自管代码，部署到 collectors_extra_dirs）——平台不执行任意代码，更安全。
 
