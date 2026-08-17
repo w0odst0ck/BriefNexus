@@ -445,18 +445,31 @@ class CliRenderFlagTest(unittest.TestCase):
 # ---------- T20: boss_zhipin 采集器接口 ----------
 
 class BossZhipinCollectorTest(unittest.TestCase):
+    """T20: boss_zhipin 采集器接口(注入 output_dir 临时目录, 避免写真实 intel/data/boss/)"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.output_dir = self._tmp.name
+
+    def _crawl(self, sess):
+        # 默认路径走关键词池(8 代表词)会发 8 个请求: mock sleep 避免真实等待
+        from intel.collectors.boss_zhipin import BossZhipinCollector
+        c = BossZhipinCollector(max_age=7, output_dir=self.output_dir)
+        with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
+             mock.patch("intel.collectors.boss_zhipin.random.uniform",
+                        return_value=0.0):
+            return c.crawl(sess)
 
     def test_boss_zhipin_parses_cards(self):
         """T20a: 渲染 HTML 含职位卡片 → NewsItem 列表"""
-        from intel.collectors.boss_zhipin import BossZhipinCollector
         html = ('<div class="job-card-wrapper">'
                 '<a class="job-card-left" href="/job_detail/123.html">'
                 '<span class="job-name">自动驾驶算法工程师</span></a></div>'
                 '<div class="job-card-wrapper">'
                 '<a class="job-card-left" href="/job_detail/456.html">'
                 '<span class="job-name">感知融合工程师</span></a></div>')
-        c = BossZhipinCollector(max_age=7)
-        items = c.crawl(_FakeRespSession(html))
+        items = self._crawl(_FakeRespSession(html))
 
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0].title, "自动驾驶算法工程师")
@@ -465,15 +478,11 @@ class BossZhipinCollectorTest(unittest.TestCase):
 
     def test_boss_zhipin_anti_bot_returns_empty(self):
         """T20b: 反爬空壳/无卡片 → []"""
-        from intel.collectors.boss_zhipin import BossZhipinCollector
-        c = BossZhipinCollector(max_age=7)
-        self.assertEqual(c.crawl(_FakeRespSession("<html>验证码</html>")), [])
+        self.assertEqual(self._crawl(_FakeRespSession("<html>验证码</html>")), [])
 
     def test_boss_zhipin_network_failure_returns_empty(self):
         """T20c: sess.get 抛异常 → [] 不抛"""
-        from intel.collectors.boss_zhipin import BossZhipinCollector
-        c = BossZhipinCollector(max_age=7)
-        self.assertEqual(c.crawl(_BoomSession()), [])
+        self.assertEqual(self._crawl(_BoomSession()), [])
 
 
 if __name__ == "__main__":

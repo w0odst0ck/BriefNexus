@@ -1,32 +1,265 @@
 """
-BOSS 直聘搜索页 — 浏览器渲染验证源(T6, 最小采集器)
+BOSS 直聘搜索页 — 正式采集器(M2a)
+
+升级自 T6 验证源: 参数化(query/city/pages/max_items) + 关键词池驱动 + 字段扩展
+(职位名/公司/薪资/经验/学历/城市) + 频率控制(delay 硬下限 5s + jitter) +
+link-hash 跨关键词去重 + 产物落盘(intel/data/boss/<date>/joblist.json, 原子写幂等)。
 
 声明 `render: true` 后, cmd_run/cmd_check 会给本源传 RenderAwareSession:
 `sess.get(url)` 返回渲染后 HTML(RenderedResponse); 渲染失败自动降级静态。
-本采集器只读 r.text 用正则提取职位卡片, 渲染失败/反爬拦截一律返回 [],
-不抛异常, 不中断整体巡检。
+本采集器只读 r.text + r.raise_for_status(), 渲染失败/反爬拦截返回已收集部分,
+顶层兜底绝不抛异常, 不中断整体巡检。
+
+参数面(design §1.2): 构造 kwarg > 环境变量 BN_BOSS_* > 代码默认。
+关键词池(design §1.3): job-search/job_keywords.json 单点真源, 失败降级内置代表词快照。
 """
+import hashlib
+import json
 import logging
+import os
+import random
 import re
+import tempfile
+import time
+from datetime import datetime
 from urllib.parse import urlencode
 
-from intel.core.base import BaseCollector, NewsItem
+from intel.core.base import CST, BaseCollector, NewsItem
 from intel.core.registry import register
 
 logger = logging.getLogger("intel.boss_zhipin")
 
 BOSS_BASE = "https://www.zhipin.com"
-BOSS_QUERY = "自动驾驶"
-BOSS_CITY = "100010000"  # 北京
 
-# 职位卡片: <a class="job-card-left" href="..."> 内 <span class="job-name">职位</span>
-# 选择器写成可调正则, DOM 变动时解析失败静默返回 [] 而非抛异常
+# ---------- 默认参数(design §1.2) ----------
+DEFAULT_CITY = "101020100"      # 上海
+DEFAULT_PAGES = 1
+DEFAULT_MAX_ITEMS = 30
+DEFAULT_DELAY = 5.0             # 硬下限 5.0(小于则 clamp)
+DEFAULT_JITTER = 2.0            # 下限 0
+
+# 城市 code → 名称映射(仅已知城市, 未知返回 "", 不虚构)
+_CITY_NAMES = {"101020100": "上海"}
+
+# 关键词池「代表词」精选快照(design §1.3, 由池 87 词蒸馏; 池缺失/非法时的降级真源)
+DEFAULT_REPRESENTATIVE_QUERIES = {
+    "ai-app-llm":             ["大模型", "RAG"],
+    "iot-embedded":           ["物联网", "嵌入式"],
+    "ai-product-manager":     ["AI产品经理"],
+    "python-data-collection": ["爬虫"],
+    "cross-border-ecommerce": ["跨境电商", "独立站"],
+}
+
+# ---------- 路径推导 ----------
+
+def _repo_root() -> str:
+    """<repo>/intel/collectors/boss_zhipin.py → <repo>"""
+    here = os.path.dirname(os.path.abspath(__file__))   # .../BriefNexus/intel/collectors
+    return os.path.dirname(os.path.dirname(here))       # .../BriefNexus
+
+
+def _default_keywords_path() -> str:
+    """单点真源: 上溯到 projects/ 后同级 job-search/job_keywords.json"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    projects = os.path.dirname(os.path.dirname(os.path.dirname(here)))
+    return os.path.join(projects, "job-search", "job_keywords.json")
+
+
+def _default_output_dir() -> str:
+    """产物根目录: <repo>/intel/data/boss"""
+    return os.path.join(_repo_root(), "intel", "data", "boss")
+
+
+# ---------- 卡片解析正则(design §1.4, 多级降级) ----------
+
+# 分块 marker: 先 <li> 形态, 无命中再 <div> 形态(regex 不能平衡标签, 按 marker 切分同层兄弟卡片)
+_CARD_SPLIT_LI = re.compile(r'<li[^>]*class="[^"]*job-card-wrapper[^"]*"[^>]*>', re.IGNORECASE)
+_CARD_SPLIT_DIV = re.compile(r'<div[^>]*class="[^"]*job-card-wrapper[^"]*"[^>]*>', re.IGNORECASE)
+
+_URL_RE = re.compile(r'href="(/job_detail/[^"]+)"')
+_URL_ANY_RE = re.compile(r'href="([^"]*job_detail[^"]*)"')
+_JOB_NAME_RE = re.compile(
+    r'<span[^>]*class="[^"]*job-name[^"]*"[^>]*>(.*?)</span>', re.DOTALL)
+_COMPANY_RE = re.compile(
+    r'class="[^"]*company-info[^"]*".*?'
+    r'<h3[^>]*class="[^"]*name[^"]*"[^>]*>(.*?)</h3>', re.DOTALL)
+_COMPANY_RE2 = re.compile(r'class="[^"]*company-name[^"]*"[^>]*>(.*?)</', re.DOTALL)
+_COMPANY_RE3 = re.compile(r'<h3[^>]*class="[^"]*name[^"]*"[^>]*>(.*?)</h3>', re.DOTALL)
+_SALARY_RE = re.compile(r'<span[^>]*class="[^"]*salary[^"]*"[^>]*>(.*?)</span>', re.DOTALL)
+_AREA_RE = re.compile(r'<span[^>]*class="[^"]*job-area[^"]*"[^>]*>(.*?)</span>', re.DOTALL)
+_JOB_INFO_RE = re.compile(r'<ul[^>]*class="[^"]*job-info[^"]*"[^>]*>.*?</ul>', re.DOTALL)
+_EXP_RE = re.compile(r'(?:经验[^<]{0,8}|[0-9]+-[0-9]+年|应届|在校)')
+_EDU_RE = re.compile(r'(?:本科|硕士|博士|大专|高中|中专|学历不限)')
+
+# 旧版正则(L2 兜底): wrapper → job-card-left → href → job-name
 _CARD_RE = re.compile(
-    r'<div class="job-card-wrapper".*?'
+    r'<div[^>]*class="[^"]*job-card-wrapper[^"]*"[^>]*>.*?'
     r'<a[^>]*class="[^"]*job-card-left[^"]*"[^>]*href="([^"]+)"[^>]*>.*?'
-    r'<span class="job-name">(.*?)</span>',
+    r'<span[^>]*class="[^"]*job-name[^"]*"[^>]*>(.*?)</span>',
     re.DOTALL,
 )
+
+# 薪资 sanity(design §1.4): 含数字 或 命中 面议/薪 才保留, 乱码/字体反爬置 ""
+_SALARY_SANE_RE = re.compile(r'\d|面议|薪')
+
+
+def _strip(s: str) -> str:
+    """去标签 + 折叠空白"""
+    s = re.sub(r"<[^>]+>", "", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _split_cards(text: str) -> list[str]:
+    """按 job-card-wrapper marker 切分同层兄弟卡片, 丢弃首段(卡片前的页面头)"""
+    if _CARD_SPLIT_LI.search(text):
+        parts = _CARD_SPLIT_LI.split(text)
+    elif _CARD_SPLIT_DIV.search(text):
+        parts = _CARD_SPLIT_DIV.split(text)
+    else:
+        return []
+    return parts[1:]
+
+
+def _extract(text: str, *regexes) -> str:
+    """按顺序尝试各正则, 首个命中取 group(1) 清洗; 全部未命中返回 ''"""
+    for rx in regexes:
+        m = rx.search(text)
+        if m:
+            return _strip(m.group(1))
+    return ""
+
+
+def _exp_edu(chunk: str) -> tuple[str, str]:
+    """经验/学历: 优先 job-info 块内匹配, 块缺失则全 chunk 匹配"""
+    info = _JOB_INFO_RE.search(chunk)
+    scope = info.group(0) if info else chunk
+    exp = _strip(m.group(0)) if (m := _EXP_RE.search(scope)) else ""
+    edu = _strip(m.group(0)) if (m := _EDU_RE.search(scope)) else ""
+    return exp, edu
+
+
+def _salary_sane(s: str) -> bool:
+    """薪资防伪: 含数字 或 命中 面议/薪 才保留"""
+    return bool(_SALARY_SANE_RE.search(s))
+
+
+def _link_hash(url: str) -> str:
+    """归一化 URL → sha256: 去 tracking query 与尾斜杠"""
+    path = url.split("?", 1)[0].rstrip("/")
+    return hashlib.sha256(path.encode("utf-8")).hexdigest()
+
+
+def _build_url(term: str, city: str, page: int = 1) -> str:
+    params = {"query": term, "city": city}
+    if page > 1:
+        params["page"] = page
+    return BOSS_BASE + "/web/geek/job?" + urlencode(params)
+
+
+def _to_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+# ---------- 关键词池(design §1.3) ----------
+
+def _load_keyword_pool(path: str) -> list[dict] | None:
+    """读 job_keywords.json → 按 order 升序的 directions 列表; 失败返回 None(降级)"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        directions = data.get("directions") if isinstance(data, dict) else None
+        if not isinstance(directions, list) or not directions:
+            raise ValueError("directions 缺失或为空")
+        directions = [d for d in directions if isinstance(d, dict) and d.get("id")]
+        if not directions:
+            raise ValueError("directions 无合法方向")
+        return sorted(directions, key=lambda d: d.get("order", 0))
+    except Exception as e:
+        logger.warning("读取关键词池失败(%s): %s, 降级内置代表词快照", path, e)
+        return None
+
+
+def _derive_from_direction(d: dict) -> list[str]:
+    """池派生: target_roles[0] → 缺失则首个 clusters 子簇首词; 两者皆空返回 []"""
+    roles = d.get("target_roles") or []
+    if isinstance(roles, list) and roles and isinstance(roles[0], str) and roles[0].strip():
+        return [roles[0].strip()]
+    clusters = d.get("clusters") or {}
+    if isinstance(clusters, dict):
+        for words in clusters.values():
+            if isinstance(words, list) and words and isinstance(words[0], str) and words[0].strip():
+                return [words[0].strip()]
+    return []
+
+
+def _resolve_queries(pool, query: str | None, queries: list[str] | None,
+                     curated: dict[str, list[str]]) -> list[dict]:
+    """查询生成三级: 显式覆盖 → 池驱动(代表词映射 → 池派生 → 派不出跳过) → 池缺失降级快照
+
+    返回: [{direction_id, direction_name, terms: [...]}, ...]
+    """
+    explicit = []
+    if queries:
+        explicit = list(queries)
+    elif query:
+        explicit = [query]
+    if explicit:
+        return [{"direction_id": "", "direction_name": "", "terms": explicit}]
+
+    if pool is None:  # 池加载失败 → 内置代表词快照(无 direction 元数据)
+        return [{"direction_id": "", "direction_name": "", "terms": list(terms)}
+                for terms in curated.values()]
+
+    result = []
+    seen_terms = set()
+    for d in pool:
+        did = d.get("id", "")
+        if did in curated:
+            terms = list(curated[did])
+        else:
+            terms = _derive_from_direction(d)
+            if not terms:
+                continue  # 派不出 → 跳过该方向
+        fresh = []
+        for t in terms:
+            if t not in seen_terms:
+                seen_terms.add(t)
+                fresh.append(t)
+        if fresh:
+            result.append({
+                "direction_id": did,
+                "direction_name": d.get("name", ""),
+                "terms": fresh,
+            })
+    return result
+
+
+# ---------- 产物落盘(design §1.8) ----------
+
+def _atomic_write_json(path: str, data: dict) -> None:
+    """mkstemp 临时文件 + os.replace 原子替换; 失败清理临时文件后重抛"""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 @register("boss_zhipin")
@@ -35,27 +268,160 @@ class BossZhipinCollector(BaseCollector):
     display_name = "BOSS 直聘"
     domains = ["self_driving"]
 
+    def __init__(self, max_age: int = 7, **ov):
+        super().__init__(max_age=max_age)
+        # 参数面: 构造 kwarg > 环境变量 BN_BOSS_* > 代码默认(design §1.2)
+        self.query = ov.get("query") or os.environ.get("BN_BOSS_QUERY") or None
+        raw_queries = ov.get("queries") or os.environ.get("BN_BOSS_QUERIES") or None
+        if isinstance(raw_queries, str):
+            raw_queries = [q.strip() for q in raw_queries.split(",") if q.strip()]
+        self.queries = list(raw_queries) if raw_queries else None
+        self.city = ov.get("city") or os.environ.get("BN_BOSS_CITY") or DEFAULT_CITY
+        self.pages = _to_int(ov.get("pages") or os.environ.get("BN_BOSS_PAGES"),
+                             DEFAULT_PAGES)
+        self.max_items = _to_int(ov.get("max_items") or os.environ.get("BN_BOSS_MAX_ITEMS"),
+                                 DEFAULT_MAX_ITEMS)
+        self.keywords_path = (ov.get("keywords_path")
+                              or os.environ.get("BN_BOSS_KEYWORDS_PATH")
+                              or _default_keywords_path())
+        # 归一化: delay 硬下限 5.0, jitter 下限 0(design §1.6)
+        self.delay = max(_to_float(ov.get("delay") or os.environ.get("BN_BOSS_DELAY"),
+                                   DEFAULT_DELAY), 5.0)
+        self.jitter = max(_to_float(ov.get("jitter") or os.environ.get("BN_BOSS_JITTER"),
+                                    DEFAULT_JITTER), 0.0)
+        self.output_dir = (ov.get("output_dir")
+                           or os.environ.get("BN_BOSS_OUTPUT_DIR")
+                           or _default_output_dir())
+
+    # ---------- 频率控制 ----------
+
+    def _sleep_between(self) -> None:
+        time.sleep(max(self.delay, 5.0) + random.uniform(0.0, max(self.jitter, 0.0)))
+
+    # ---------- 卡片解析 ----------
+
+    def _parse_card(self, chunk: str, term: str, q: dict) -> dict | None:
+        """分块内逐字段解析, L0-L3 多级降级; 解析失败返回 None(跳过该卡片)"""
+        url = _extract(chunk, _URL_RE, _URL_ANY_RE)
+        title = _extract(chunk, _JOB_NAME_RE)
+        if url and not title:  # L2 职位名兜底: 旧版正则复提 job-name
+            m = _CARD_RE.search(chunk)
+            if m:
+                title = _strip(m.group(2))
+                if not url:
+                    url = m.group(1)
+        if not url and not title:  # L3 跳过: url 与职位名均空
+            return None
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith("/"):
+            url = BOSS_BASE + url
+
+        company = _extract(chunk, _COMPANY_RE, _COMPANY_RE2, _COMPANY_RE3)
+        salary = _extract(chunk, _SALARY_RE)
+        if salary and not _salary_sane(salary):  # E8 薪资乱码/字体反爬 → 置 "", 不猜测
+            logger.warning("BOSS 薪资疑似字体反爬乱码(%s), 置空: %s", salary, url)
+            salary = ""
+        exp, edu = _exp_edu(chunk)
+        area = _extract(chunk, _AREA_RE)
+
+        return {
+            "job_title": title,
+            "company": company,
+            "salary": salary,
+            "experience": exp,
+            "education": edu,
+            "area": area,
+            "url": url,
+            "link_hash": _link_hash(url),
+            "query": term,
+            "direction_id": q.get("direction_id", ""),
+            "direction_name": q.get("direction_name", ""),
+        }
+
+    # ---------- 采集 ----------
+
     def crawl(self, sess) -> list[NewsItem]:
-        items = []
+        jobs: list[dict] = []
+        seen: set[str] = set()
+        stats = {"requests": 0, "cards_seen": 0, "unique_jobs": 0,
+                 "blocked_queries": 0, "failed_requests": 0}
+        pool = _load_keyword_pool(self.keywords_path)
+        queries = _resolve_queries(pool, self.query, self.queries,
+                                   DEFAULT_REPRESENTATIVE_QUERIES)
         try:
-            url = BOSS_BASE + "/web/geek/job?" + urlencode(
-                {"query": BOSS_QUERY, "city": BOSS_CITY}
-            )
-            r = sess.get(url, timeout=30)
-            r.raise_for_status()
-            text = r.text or ""
-            if "job-card-wrapper" not in text:
-                logger.warning("BOSS 直聘页面无职位卡片(反爬/结构变更), 返回空")
-                return []
-            for href, title in _CARD_RE.findall(text):
-                title = re.sub(r"<[^>]+>", "", title).strip()
-                if not title:
-                    continue
-                if not href.startswith("http"):
-                    href = BOSS_BASE + href
-                items.append(NewsItem(
-                    title=title, url=href, source=self.display_name, domain="招聘"
-                ))
-        except Exception as e:  # 渲染失败/网络失败/解析失败均收敛为 []
-            logger.error("BOSS 直聘采集失败: %s", e)
-        return items
+            first_request = True
+            for q in queries:
+                for term in q["terms"]:
+                    for page in range(1, self.pages + 1):
+                        if len(jobs) >= self.max_items:  # E10 早停
+                            return self._finish(jobs, stats, queries)
+                        if not first_request:            # 频率控制: 第 1 请求前不睡
+                            self._sleep_between()
+                        first_request = False
+                        url = _build_url(term, self.city, page)
+                        try:
+                            r = sess.get(url, timeout=30)
+                            r.raise_for_status()
+                        except Exception as e:           # E4 单页失败不中断
+                            stats["failed_requests"] += 1
+                            logger.warning("BOSS 请求失败 %s: %s", url, e)
+                            continue
+                        text = r.text or ""
+                        if "job-card-wrapper" not in text:  # E5 反爬/无卡片 → break 该 query
+                            stats["blocked_queries"] += 1
+                            logger.warning("BOSS 页面无职位卡片(反爬/结构变更), 放弃该查询: %s", url)
+                            break
+                        for chunk in _split_cards(text):
+                            rec = self._parse_card(chunk, term, q)
+                            if not rec:
+                                continue
+                            stats["cards_seen"] += 1
+                            h = rec["link_hash"]
+                            if h in seen:                # E9 跨关键词去重(保留首次溯源)
+                                continue
+                            seen.add(h)
+                            jobs.append(rec)
+                        stats["requests"] += 1
+        except Exception:                                 # E12 顶层兜底: 返回已收集部分
+            logger.exception("boss crawl 未预期异常")
+        return self._finish(jobs, stats, queries)
+
+    # ---------- 收尾: 产物 + NewsItem ----------
+
+    def _finish(self, jobs: list[dict], stats: dict, queries: list[dict]) -> list[NewsItem]:
+        stats["unique_jobs"] = len(jobs)
+        self._write_joblist(jobs, stats, queries)
+        return [self._to_newsitem(j) for j in jobs]
+
+    def _to_newsitem(self, rec: dict) -> NewsItem:
+        item = NewsItem(
+            title=rec["job_title"] or rec["url"],  # title 兜底用真实 url, 不虚构
+            url=rec["url"],
+            summary=" · ".join(filter(None, [rec["company"], rec["salary"],
+                                             rec["experience"]])),
+            source=self.display_name,
+            domain="招聘",
+        )
+        item.raw_data = {"job": rec}  # 扩展字段挂 raw_data(cmd_run/cmd_check 管道可见)
+        return item
+
+    def _write_joblist(self, jobs: list[dict], stats: dict, queries: list[dict]) -> None:
+        today = datetime.now(CST).strftime("%Y-%m-%d")
+        path = os.path.join(self.output_dir, today, "joblist.json")
+        data = {
+            "schema_version": "1.0",
+            "source": "boss_zhipin",
+            "collected_at": datetime.now(CST).isoformat(timespec="seconds"),
+            "city": self.city,
+            "city_name": _CITY_NAMES.get(self.city, ""),
+            "params": {"pages": self.pages, "max_items": self.max_items,
+                       "delay": self.delay, "jitter": self.jitter},
+            "queries": queries,
+            "stats": stats,
+            "jobs": jobs,
+        }
+        try:  # E11 写盘失败 warning, 不致命
+            _atomic_write_json(path, data)
+        except Exception as e:
+            logger.warning("BOSS 产物落盘失败 %s: %s", path, e)

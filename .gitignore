@@ -15,6 +15,9 @@ standards/output/
 # Intel output (regenerated)
 intel/output/
 
+# Intel data (boss 采集产物, regenerated)
+intel/data/
+
 # Editor
 *.swp
 *.swo
