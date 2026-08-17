@@ -13,6 +13,7 @@ link-hash 跨关键词去重 + 产物落盘(intel/data/boss/<date>/joblist.json,
 参数面(design §1.2): 构造 kwarg > 环境变量 BN_BOSS_* > 代码默认。
 关键词池(design §1.3): job-search/job_keywords.json 单点真源, 失败降级内置代表词快照。
 """
+import glob
 import hashlib
 import json
 import logging
@@ -37,6 +38,11 @@ DEFAULT_PAGES = 1
 DEFAULT_MAX_ITEMS = 30
 DEFAULT_DELAY = 5.0             # 硬下限 5.0(小于则 clamp)
 DEFAULT_JITTER = 2.0            # 下限 0
+
+# cookie 默认路径: 用户已导出的登录态(EditThisCookie 格式, chmod 600, repo 外)
+DEFAULT_COOKIES_PATH = os.path.expanduser("~/.config/boss/cookies.json")
+# sameSite 归一化: EditThisCookie 值 → playwright add_cookies 值(其余省略)
+_SAMESITE_MAP = {"no_restriction": "None", "lax": "Lax", "strict": "Strict"}
 
 # 城市 code → 名称映射(仅已知城市, 未知返回 "", 不虚构)
 _CITY_NAMES = {"101020100": "上海"}
@@ -70,6 +76,11 @@ def _default_output_dir() -> str:
     return os.path.join(_repo_root(), "intel", "data", "boss")
 
 
+def _default_cookies_path() -> str:
+    """默认 cookie 路径: ~/.config/boss/cookies.json(用户导出, chmod 600)"""
+    return DEFAULT_COOKIES_PATH
+
+
 # ---------- 卡片解析正则(design §1.4, 多级降级) ----------
 
 # 分块 marker: 先 <li> 形态, 无命中再 <div> 形态(regex 不能平衡标签, 按 marker 切分同层兄弟卡片)
@@ -101,6 +112,15 @@ _CARD_RE = re.compile(
 
 # 薪资 sanity(design §1.4): 含数字 或 命中 面议/薪 才保留, 乱码/字体反爬置 ""
 _SALARY_SANE_RE = re.compile(r'\d|面议|薪')
+
+# 详情页 JD 容器多级正则(design §1.5.2, L0→L2 降级, 不虚构)
+_JD_RE_L0 = re.compile(
+    r'<div[^>]*class="[^"]*job-sec-text[^"]*"[^>]*>(.*?)</div>', re.DOTALL)
+_JD_RE_L1 = re.compile(
+    r'<div[^>]*class="[^"]*(?:job-detail|job-detail-section|job-description)[^"]*"[^>]*>'
+    r'(.*?)</div>', re.DOTALL)
+_JD_RE_L2 = re.compile(
+    r'职位描述\s*</?[^>]*>\s*(.*?)(?=<h[1-6]|<section|$)', re.DOTALL)
 
 
 def _strip(s: str) -> str:
@@ -143,6 +163,21 @@ def _salary_sane(s: str) -> bool:
     return bool(_SALARY_SANE_RE.search(s))
 
 
+def _extract_jd_full(text: str) -> tuple[str, str]:
+    """详情页 JD 全文多级降级提取 → (jd_full, jd_status)
+
+    L0 job-sec-text → L1 job-detail/job-description 容器 → L2 职位描述标题捕获。
+    全部未命中/提取为空 → ("", "empty"), 绝不虚构。
+    """
+    for rx in (_JD_RE_L0, _JD_RE_L1, _JD_RE_L2):
+        m = rx.search(text)
+        if m:
+            jd = _strip(m.group(1))
+            if jd:
+                return jd, "ok"
+    return "", "empty"
+
+
 def _link_hash(url: str) -> str:
     """归一化 URL → sha256: 去 tracking query 与尾斜杠"""
     path = url.split("?", 1)[0].rstrip("/")
@@ -168,6 +203,15 @@ def _to_float(value, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _to_bool(value, default: bool = False) -> bool:
+    """布尔解析, fail-closed: None → default; 非 1/true/yes 一律 False"""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes")
 
 
 # ---------- 关键词池(design §1.3) ----------
@@ -262,6 +306,89 @@ def _atomic_write_json(path: str, data: dict) -> None:
         raise
 
 
+# ---------- cookie 加载与归一化(design §1.5.1, EditThisCookie → playwright) ----------
+
+def _normalize_cookie(c) -> dict | None:
+    """单条 EditThisCookie → playwright add_cookies 格式; 非法/非白名单域 → None
+
+    映射: expirationDate(unix 秒) → expires; session/no expirationDate → 不写 expires;
+    sameSite no_restriction/lax/strict → None/Lax/Strict(其余省略); domain 去前导点;
+    丢弃缺 name/value 或非 zhipin.com 域的条目(fail-closed)。
+    """
+    if not isinstance(c, dict):
+        return None
+    name = c.get("name")
+    value = c.get("value")
+    if not name or value is None:
+        return None
+    domain = (c.get("domain") or "").lstrip(".")
+    if domain and not domain.endswith("zhipin.com"):  # 域白名单
+        return None
+    out = {"name": name, "value": value}
+    if domain:
+        out["domain"] = domain
+    out["path"] = c.get("path") or "/"
+    if c.get("secure"):
+        out["secure"] = True
+    if c.get("httpOnly"):
+        out["httpOnly"] = True
+    ss = c.get("sameSite")
+    if ss:
+        mapped = _SAMESITE_MAP.get(str(ss).lower())
+        if mapped:  # 非法值 → 省略该字段, 不抛
+            out["sameSite"] = mapped
+    exp = c.get("expirationDate")
+    if isinstance(exp, (int, float)) and not isinstance(exp, bool) and not c.get("session"):
+        out["expires"] = float(exp)
+    return out
+
+
+def _load_cookies(path: str) -> list[dict] | None:
+    """读 cookie 文件 → 归一化列表; 缺失/坏/空/全丢弃 → warning + None(无 cookie 跑)
+
+    日志仅报 path + 原因 + 条数, 绝不输出 cookie 名/值(红线)。
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        logger.warning("BOSS cookie 文件缺失(%s), 无 cookie 采集(可能被安全验证拦截)", path)
+        return None
+    except Exception as e:
+        logger.warning("BOSS cookie 文件读取失败(%s): %s, 无 cookie 采集", path, e)
+        return None
+    if isinstance(raw, dict):  # 兼容 {"cookies": [...]} 顶层
+        raw = raw.get("cookies")
+    if not isinstance(raw, list) or not raw:
+        logger.warning("BOSS cookie 文件为空或非法(%s), 无 cookie 采集", path)
+        return None
+    out = []
+    for c in raw:
+        n = _normalize_cookie(c)
+        if n:
+            out.append(n)
+    if not out:
+        logger.warning("BOSS cookie 全部被归一化丢弃(%s), 无 cookie 采集", path)
+        return None
+    logger.info("加载 BOSS cookie %d 条", len(out))
+    return out
+
+
+def _merge_dedup(prior: list[dict], new_jobs: list[dict]) -> list[dict]:
+    """merge 历史 ∪ 本次新采集, 按 link_hash 去重, prior 保留首次溯源"""
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for rec in list(prior) + list(new_jobs):
+        if not isinstance(rec, dict):
+            continue
+        h = rec.get("link_hash")
+        if not h or h in seen:
+            continue
+        seen.add(h)
+        merged.append(rec)
+    return merged
+
+
 @register("boss_zhipin")
 class BossZhipinCollector(BaseCollector):
     source_name = "boss_zhipin"
@@ -292,6 +419,18 @@ class BossZhipinCollector(BaseCollector):
         self.output_dir = (ov.get("output_dir")
                            or os.environ.get("BN_BOSS_OUTPUT_DIR")
                            or _default_output_dir())
+        # M2b: cookie 路径 / 详情开关 / force 重采(构造 kwarg > 环境变量 > 默认)
+        self.cookies_path = (ov.get("cookies_path")
+                             or os.environ.get("BN_BOSS_COOKIES_PATH")
+                             or _default_cookies_path())
+        details = ov.get("details")
+        if details is None:
+            details = os.environ.get("BN_BOSS_DETAILS")
+        self.details = _to_bool(details, True)      # 生产默认开详情采集
+        force = ov.get("force")
+        if force is None:
+            force = os.environ.get("BN_BOSS_FORCE")
+        self.force = _to_bool(force, False)         # 默认增量, force 才重采
 
     # ---------- 频率控制 ----------
 
@@ -345,23 +484,36 @@ class BossZhipinCollector(BaseCollector):
         jobs: list[dict] = []
         seen: set[str] = set()
         stats = {"requests": 0, "cards_seen": 0, "unique_jobs": 0,
-                 "blocked_queries": 0, "failed_requests": 0}
+                 "blocked_queries": 0, "failed_requests": 0,
+                 "new_jobs": 0, "skipped_existing": 0,
+                 "detail_fetched": 0, "detail_failed": 0, "detail_empty": 0}
+        cookies = _load_cookies(self.cookies_path)   # None → 无 cookie(M2a 行为)
         pool = _load_keyword_pool(self.keywords_path)
         queries = _resolve_queries(pool, self.query, self.queries,
                                    DEFAULT_REPRESENTATIVE_QUERIES)
+        today = datetime.now(CST).strftime("%Y-%m-%d")
+        # 增量去重: force → 忽略历史全量重采; 否则读当日/最近历史
+        history_hashes, prior_jobs = (set(), []) if self.force \
+            else self._load_history(today)
         try:
-            first_request = True
+            first_request = [True]
+
+            def _gate() -> None:
+                """列表+详情所有请求共用的频率门控: 首个请求前不睡"""
+                if not first_request[0]:
+                    self._sleep_between()
+                first_request[0] = False
+
             for q in queries:
                 for term in q["terms"]:
                     for page in range(1, self.pages + 1):
                         if len(jobs) >= self.max_items:  # E10 早停
-                            return self._finish(jobs, stats, queries)
-                        if not first_request:            # 频率控制: 第 1 请求前不睡
-                            self._sleep_between()
-                        first_request = False
+                            return self._finish(jobs, stats, queries, prior_jobs)
+                        _gate()                         # 频率控制(列表请求)
                         url = _build_url(term, self.city, page)
                         try:
-                            r = sess.get(url, timeout=30)
+                            r = sess.get(url, timeout=30,
+                                         **({"cookies": cookies} if cookies else {}))
                             r.raise_for_status()
                         except Exception as e:           # E4 单页失败不中断
                             stats["failed_requests"] += 1
@@ -378,28 +530,100 @@ class BossZhipinCollector(BaseCollector):
                                 continue
                             stats["cards_seen"] += 1
                             h = rec["link_hash"]
-                            if h in seen:                # E9 跨关键词去重(保留首次溯源)
+                            if h in seen:                # E9 本次运行跨词去重(保留首溯源)
+                                continue
+                            if not self.force and h in history_hashes:  # 增量去重
+                                stats["skipped_existing"] += 1
                                 continue
                             seen.add(h)
+                            if self.details:             # 详情页二次渲染(新卡片)
+                                _gate()                  # 频率控制(详情请求, 共用门控)
+                                jd_full, jd_status = self._fetch_jd(sess, rec["url"],
+                                                                    cookies)
+                                rec["jd_full"], rec["jd_status"] = jd_full, jd_status
+                                if jd_status == "ok":
+                                    stats["detail_fetched"] += 1
+                                elif jd_status == "failed":
+                                    stats["detail_failed"] += 1
+                                else:
+                                    stats["detail_empty"] += 1
+                            else:                        # 详情关闭 → 跳过
+                                rec["jd_full"], rec["jd_status"] = "", "skipped"
                             jobs.append(rec)
                         stats["requests"] += 1
         except Exception:                                 # E12 顶层兜底: 返回已收集部分
             logger.exception("boss crawl 未预期异常")
-        return self._finish(jobs, stats, queries)
+        return self._finish(jobs, stats, queries, prior_jobs)
+
+    # ---------- 详情页 JD 采集(design §1.5.2) ----------
+
+    def _fetch_jd(self, sess, url: str, cookies) -> tuple[str, str]:
+        """单详情页渲染 → (jd_full, jd_status)。任何失败 → ("", "failed"), 不中断整体"""
+        try:
+            r = sess.get(url, timeout=30,
+                         **({"cookies": cookies} if cookies else {}))
+            r.raise_for_status()
+        except Exception:
+            return "", "failed"
+        return _extract_jd_full(r.text or "")
+
+    # ---------- 增量历史(design §1.5.3) ----------
+
+    def _load_history(self, today: str) -> tuple[set[str], list[dict]]:
+        """读当日 joblist.json(缺则取日期最大者) → (link_hash 集合, prior 记录)
+
+        缺失/坏 JSON/结构异常 → warning + 空历史(全量当新)。
+        """
+        path = os.path.join(self.output_dir, today, "joblist.json")
+        if not os.path.exists(path):
+            candidates = sorted(glob.glob(
+                os.path.join(self.output_dir, "*", "joblist.json")))
+            if not candidates:
+                return set(), []
+            path = candidates[-1]   # YYYY-MM-DD 字典序最大 = 日期最新
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            jobs = data.get("jobs") if isinstance(data, dict) else None
+            if not isinstance(jobs, list):
+                raise TypeError("jobs 缺失或非法")
+            hashes: set[str] = set()
+            prior: list[dict] = []
+            for j in jobs:
+                if not isinstance(j, dict) or not j.get("link_hash"):
+                    continue       # 结构异常条目跳过(E14: 全无 → 视为空历史)
+                h = j["link_hash"]
+                if h in hashes:
+                    continue
+                hashes.add(h)
+                prior.append(j)
+            return hashes, prior
+        except Exception as e:
+            logger.warning("读取历史 joblist.json 失败(%s): %s, 全量当新", path, e)
+            return set(), []
 
     # ---------- 收尾: 产物 + NewsItem ----------
 
-    def _finish(self, jobs: list[dict], stats: dict, queries: list[dict]) -> list[NewsItem]:
-        stats["unique_jobs"] = len(jobs)
-        self._write_joblist(jobs, stats, queries)
-        return [self._to_newsitem(j) for j in jobs]
+    def _finish(self, jobs: list[dict], stats: dict, queries: list[dict],
+                prior_jobs: list[dict]) -> list[NewsItem]:
+        # merge 历史 ∪ 本次新采集(link_hash 去重, prior 保留首次溯源)
+        final_jobs = _merge_dedup(prior_jobs, jobs)
+        for rec in final_jobs:  # 向后兼容: 旧产物条目补齐 jd 字段
+            rec.setdefault("jd_full", "")
+            rec.setdefault("jd_status", "skipped")
+        stats["unique_jobs"] = len(final_jobs)
+        stats["new_jobs"] = len(jobs)
+        self._write_joblist(final_jobs, stats, queries)
+        return [self._to_newsitem(j) for j in final_jobs]
 
     def _to_newsitem(self, rec: dict) -> NewsItem:
+        # .get 兜底: 历史 merge 进来的 prior 记录可能字段不全, 不崩
         item = NewsItem(
-            title=rec["job_title"] or rec["url"],  # title 兜底用真实 url, 不虚构
-            url=rec["url"],
-            summary=" · ".join(filter(None, [rec["company"], rec["salary"],
-                                             rec["experience"]])),
+            title=rec.get("job_title") or rec.get("url") or "",  # title 兜底用真实 url
+            url=rec.get("url", ""),
+            summary=" · ".join(filter(None, [rec.get("company", ""),
+                                             rec.get("salary", ""),
+                                             rec.get("experience", "")])),
             source=self.display_name,
             domain="招聘",
         )
@@ -416,7 +640,8 @@ class BossZhipinCollector(BaseCollector):
             "city": self.city,
             "city_name": _CITY_NAMES.get(self.city, ""),
             "params": {"pages": self.pages, "max_items": self.max_items,
-                       "delay": self.delay, "jitter": self.jitter},
+                       "delay": self.delay, "jitter": self.jitter,
+                       "details": self.details, "force": self.force},
             "queries": queries,
             "stats": stats,
             "jobs": jobs,

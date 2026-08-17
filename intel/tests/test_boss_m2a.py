@@ -132,7 +132,7 @@ class ParametrizeTest(unittest.TestCase):
     def test_single_query_override(self):
         """T2: query="RAG" → 仅 1 请求、URL 含 query=RAG&city=上海, 忽略池"""
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="RAG", output_dir=tmp)
+            c = BossZhipinCollector(query="RAG", output_dir=tmp, details=False)
             sess = FakeSession([FakeResponse(_page(_card("1")))])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
@@ -243,7 +243,7 @@ class FieldParseTest(unittest.TestCase):
                            salary="30-50K", exp="3-5年", edu="本科",
                            area="上海·浦东新区"))
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="大模型", output_dir=tmp)
+            c = BossZhipinCollector(query="大模型", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(FakeSession([FakeResponse(html)]))
         rec = items[0].raw_data["job"]
@@ -265,7 +265,7 @@ class FieldParseTest(unittest.TestCase):
                      'href="/job_detail/1.html"><span class="job-name">岗位X</span>'
                      '</a></div>')
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="x", output_dir=tmp)
+            c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(FakeSession([FakeResponse(html)]))
         rec = items[0].raw_data["job"]
@@ -282,7 +282,7 @@ class FieldParseTest(unittest.TestCase):
                      '<a class="job-card-left" href="/job_detail/456.html">'
                      '<span class="job-name">感知融合工程师</span></a></div>')
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="x", output_dir=tmp)
+            c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(FakeSession([FakeResponse(html)]))
         self.assertEqual(len(items), 1)
@@ -309,7 +309,7 @@ class FieldParseTest(unittest.TestCase):
             _card("3", title="岗位C", salary="20K"),
         )
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="x", output_dir=tmp)
+            c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
                 items = c.crawl(FakeSession([FakeResponse(html)]))
@@ -327,7 +327,8 @@ class CrawlBehaviorTest(unittest.TestCase):
         """T10: 同 job_detail 链接跨 query 命中 → 仅 1 条, 保留首 query 溯源"""
         html = _page(_card("9", title="同岗位"))
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(queries=["第一词", "第二词"], output_dir=tmp)
+            c = BossZhipinCollector(queries=["第一词", "第二词"], output_dir=tmp,
+                                    details=False)
             sess = FakeSession([FakeResponse(html), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
@@ -341,7 +342,7 @@ class CrawlBehaviorTest(unittest.TestCase):
         html = _page(_card("1"))
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(queries=["a", "b"], delay=1.0, jitter=0.0,
-                                    output_dir=tmp)
+                                    output_dir=tmp, details=False)
             sess = FakeSession([FakeResponse(html), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep") as m_sleep, \
                  mock.patch("intel.collectors.boss_zhipin.random.uniform",
@@ -383,7 +384,8 @@ class CrawlBehaviorTest(unittest.TestCase):
         """T14: max_items=2 + 每页 2 卡 × 2 词 → 恰 2 条, 第 2 词不再发请求"""
         html = _page(_card("1"), _card("2"))
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(queries=["a", "b"], max_items=2, output_dir=tmp)
+            c = BossZhipinCollector(queries=["a", "b"], max_items=2, output_dir=tmp,
+                                    details=False)
             sess = FakeSession([FakeResponse(html), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
@@ -394,7 +396,7 @@ class CrawlBehaviorTest(unittest.TestCase):
         """T15: pages=2 → 2 次 get, 第 2 页 URL 含 page=2; 第 2 页空 → 停"""
         html = _page(_card("1"))
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="x", pages=2, output_dir=tmp)
+            c = BossZhipinCollector(query="x", pages=2, output_dir=tmp, details=False)
             sess = FakeSession([FakeResponse(html),
                                 FakeResponse("<html>empty</html>")])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
@@ -412,7 +414,7 @@ class ArtifactTest(unittest.TestCase):
         """T16: joblist.json 结构齐全、link_hash 无重复; 重跑覆盖同路径"""
         html = _page(_card("1", title="A"), _card("2", title="B"))
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="x", output_dir=tmp)
+            c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 c.crawl(FakeSession([FakeResponse(html)]))
             path = os.path.join(tmp, _today(), "joblist.json")
@@ -441,7 +443,7 @@ class ArtifactTest(unittest.TestCase):
         """T17: os.replace 抛 OSError → 仍返回 items、不抛"""
         html = _page(_card("1"))
         with tempfile.TemporaryDirectory() as tmp:
-            c = BossZhipinCollector(query="x", output_dir=tmp)
+            c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  mock.patch("intel.collectors.boss_zhipin.os.replace",
                             side_effect=OSError("readonly fs")), \

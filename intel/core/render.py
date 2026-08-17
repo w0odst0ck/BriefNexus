@@ -59,15 +59,25 @@ class RenderExecutor:
         self.default_timeout = default_timeout
         self.grace = grace  # subprocess 外层硬超时宽限(钳制 worker 清理时间)
 
-    def render(self, url: str, timeout: float | None = None) -> RenderResult:
-        """渲染 URL → RenderResult。任何异常都不外抛。"""
+    def render(self, url: str, timeout: float | None = None,
+               cookies: list[dict] | None = None) -> RenderResult:
+        """渲染 URL → RenderResult。任何异常都不外抛。
+
+        cookies: playwright context.add_cookies 格式的 cookie 列表(可选)。
+        None 或 [] → 命令/调用与改动前逐字节一致(不追加标志、不读 stdin)。
+        cookie 值经 stdin JSON 传给 worker(非 argv), 避免 `ps` 泄漏。
+        """
         t = float(timeout) if timeout is not None else float(self.default_timeout)
         cmd = [self.python, self.worker, url, "--timeout", f"{t:g}"]
+        stdin_data = None
+        if cookies:  # 非空才追加标志 + 走 stdin(无 argv 泄漏)
+            cmd.append("--cookies-stdin")
+            stdin_data = json.dumps({"cookies": cookies}, ensure_ascii=False)
         try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, encoding="utf-8",
-                timeout=t + self.grace, check=False,
-            )
+            # input=None 等价于不传(design §1.3: cookies=None 时行为与现状一致)
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  encoding="utf-8", timeout=t + self.grace,
+                                  check=False, input=stdin_data)
         except FileNotFoundError:
             return RenderResult(ok=False, error="playwright venv python/worker 不存在")
         except subprocess.TimeoutExpired:
@@ -107,6 +117,15 @@ def _to_int(value) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _to_requests_dict(cookies: list[dict]) -> dict:
+    """playwright cookie list → requests cookie dict {name: value}
+
+    仅取 name/value 有效条目; 不参与日志/产物, 无泄漏面。
+    """
+    return {c["name"]: c["value"] for c in cookies
+            if isinstance(c, dict) and c.get("name") and "value" in c}
 
 
 class RenderedResponse:
@@ -167,17 +186,24 @@ class RenderAwareSession:
     """
 
     def __init__(self, session: requests.Session, executor: RenderExecutor,
-                 timeout: float = 30.0):
+                 timeout: float = 30.0, cookies: list[dict] | None = None):
         self._session = session
         self._executor = executor
         self._timeout = timeout
+        self._cookies = cookies  # 构造级默认, 可被 get(cookies=...) 覆盖
 
     def get(self, url: str, **kwargs):
         timeout = kwargs.pop("timeout", self._timeout)
-        result = self._executor.render(url, timeout=timeout)
+        cookies = kwargs.pop("cookies", self._cookies)  # 逐请求覆盖 > 构造默认
+        if cookies:
+            result = self._executor.render(url, timeout=timeout, cookies=cookies)
+        else:  # cookies=None/[] → 2 参形式, 兼容既有 executor stub
+            result = self._executor.render(url, timeout=timeout)
         if result.ok and result.html:  # 渲染成功且非空
             return RenderedResponse(result)
         logger.warning("渲染失败(%s) → 降级静态抓取: %s", result.error, url)
+        if cookies:  # 静态降级: list → requests cookie dict 透传
+            kwargs["cookies"] = _to_requests_dict(cookies)
         return self._session.get(url, timeout=timeout, **kwargs)
 
     def post(self, url: str, **kwargs):
