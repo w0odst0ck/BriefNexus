@@ -38,15 +38,19 @@ from intel.core.base import CST
 
 
 class FakeResponse:
-    """requests.Response 替身: 只暴露 crawl 依赖的 text / raise_for_status"""
+    """requests.Response 替身: text/status/json_body; json_body=None → json() 抛 ValueError"""
 
-    def __init__(self, text="", status=200):
-        self._text = text
-        self._status = status
+    def __init__(self, text="", status=200, json_body=None):
+        self._text, self._status, self._json = text, status, json_body
 
     @property
     def text(self):
         return self._text
+
+    def json(self, **kw):
+        if self._json is None:
+            raise ValueError("no JSON body")   # 模拟「非 JSON」→ API 降级
+        return self._json
 
     def raise_for_status(self):
         if not (200 <= self._status < 400):
@@ -104,6 +108,19 @@ def _page(*cards):
     return "<html><body>" + "".join(cards) + "</body></html>"
 
 
+def _api_fail():
+    """API 失败响应(非 JSON)→ crawl 自动降级 HTML(design §2.3)"""
+    return FakeResponse(json_body=None)
+
+
+def _html_session(*cards, detail=None):
+    """HTML 降级路径专用: 先 API 失败、再 HTML 列表、可选 HTML 详情"""
+    responses = [_api_fail(), FakeResponse(_page(*cards))]
+    if detail is not None:
+        responses.append(FakeResponse(detail))
+    return FakeSession(responses)
+
+
 def _today():
     return datetime.now(CST).strftime("%Y-%m-%d")
 
@@ -133,12 +150,12 @@ class ParametrizeTest(unittest.TestCase):
         """T2: query="RAG" → 仅 1 请求、URL 含 query=RAG&city=上海, 忽略池"""
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="RAG", output_dir=tmp, details=False)
-            sess = FakeSession([FakeResponse(_page(_card("1")))])
+            sess = _html_session(_card("1"))
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
         self.assertEqual(len(items), 1)
-        self.assertEqual(len(sess.calls), 1)
-        url = sess.calls[0][0]
+        self.assertEqual(len(sess.calls), 2)  # API 失败 + HTML 降级
+        url = sess.calls[1][0]                # HTML 降级请求
         self.assertIn("query=RAG", url)
         self.assertIn("city=101020100", url)
 
@@ -194,7 +211,7 @@ class KeywordPoolTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(keywords_path="/nonexistent/job_keywords.json",
                                     output_dir=tmp)
-            sess = FakeSession([FakeResponse(_page(_card("1")))])
+            sess = _html_session(_card("1"))
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
                 items = c.crawl(sess)
@@ -210,7 +227,7 @@ class KeywordPoolTest(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 c = BossZhipinCollector(keywords_path=path, output_dir=tmp)
-                sess = FakeSession([FakeResponse(_page(_card("1")))])
+                sess = _html_session(_card("1"))
                 with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                      self.assertLogs("intel.boss_zhipin", level="WARNING"):
                     items = c.crawl(sess)
@@ -239,13 +256,13 @@ class FieldParseTest(unittest.TestCase):
 
     def test_field_parse_full(self):
         """T6: 完整卡片 → title/company/salary/experience/education/area/url 全解析"""
-        html = _page(_card("123", title="大模型算法工程师", company="某某科技",
-                           salary="30-50K", exp="3-5年", edu="本科",
-                           area="上海·浦东新区"))
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="大模型", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
-                items = c.crawl(FakeSession([FakeResponse(html)]))
+                items = c.crawl(_html_session(
+                    _card("123", title="大模型算法工程师", company="某某科技",
+                          salary="30-50K", exp="3-5年", edu="本科",
+                          area="上海·浦东新区")))
         rec = items[0].raw_data["job"]
         self.assertEqual(rec["job_title"], "大模型算法工程师")
         self.assertEqual(rec["company"], "某某科技")
@@ -267,7 +284,7 @@ class FieldParseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
-                items = c.crawl(FakeSession([FakeResponse(html)]))
+                items = c.crawl(FakeSession([_api_fail(), FakeResponse(html)]))
         rec = items[0].raw_data["job"]
         self.assertEqual(rec["job_title"], "岗位X")
         self.assertEqual(rec["url"], "https://www.zhipin.com/job_detail/1.html")
@@ -284,7 +301,7 @@ class FieldParseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
-                items = c.crawl(FakeSession([FakeResponse(html)]))
+                items = c.crawl(FakeSession([_api_fail(), FakeResponse(html)]))
         self.assertEqual(len(items), 1)
         rec = items[0].raw_data["job"]
         self.assertEqual(rec["job_title"], "感知融合工程师")
@@ -298,7 +315,7 @@ class FieldParseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="x", output_dir=tmp)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
-                items = c.crawl(FakeSession([FakeResponse(html)]))
+                items = c.crawl(FakeSession([_api_fail(), FakeResponse(html)]))
         self.assertEqual(items, [])
 
     def test_field_parse_no_fabrication(self):
@@ -312,7 +329,7 @@ class FieldParseTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
-                items = c.crawl(FakeSession([FakeResponse(html)]))
+                items = c.crawl(FakeSession([_api_fail(), FakeResponse(html)]))
         recs = {it.title: it.raw_data["job"] for it in items}
         self.assertEqual(recs["岗位A"]["salary"], "")   # 乱码 → 置空
         self.assertEqual(recs["岗位B"]["salary"], "面议")  # 面议 → 保留
@@ -329,13 +346,14 @@ class CrawlBehaviorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(queries=["第一词", "第二词"], output_dir=tmp,
                                     details=False)
-            sess = FakeSession([FakeResponse(html), FakeResponse(html)])
+            sess = FakeSession([_api_fail(), FakeResponse(html),
+                                _api_fail(), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
         self.assertEqual(len(items), 1)
         rec = items[0].raw_data["job"]
         self.assertEqual(rec["query"], "第一词")  # 保留首次命中溯源
-        self.assertEqual(len(sess.calls), 2)       # 两词都请求过(去重在解析后)
+        self.assertEqual(len(sess.calls), 4)       # 两词各 API 失败 + HTML(去重在解析后)
 
     def test_frequency_control(self):
         """T11: 2 请求 → sleep 恰好 1 次且参数 ≥5.0; delay=1 钳到 5.0"""
@@ -343,12 +361,13 @@ class CrawlBehaviorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(queries=["a", "b"], delay=1.0, jitter=0.0,
                                     output_dir=tmp, details=False)
-            sess = FakeSession([FakeResponse(html), FakeResponse(html)])
+            sess = FakeSession([_api_fail(), FakeResponse(html),
+                                _api_fail(), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep") as m_sleep, \
                  mock.patch("intel.collectors.boss_zhipin.random.uniform",
                             return_value=0.0):
                 c.crawl(sess)
-        self.assertEqual(m_sleep.call_count, 1)
+        self.assertEqual(m_sleep.call_count, 1)  # _gate 按页槽位门控(API+HTML 同槽), 2 词 → 1 间隔
         self.assertGreaterEqual(m_sleep.call_args.args[0], 5.0)
         # delay 硬下限也写入产物 params
         with tempfile.TemporaryDirectory() as tmp2:
@@ -360,7 +379,9 @@ class CrawlBehaviorTest(unittest.TestCase):
         html = _page(_card("2", title="幸存岗位"))
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(queries=["坏词", "好词"], output_dir=tmp)
-            sess = FakeSession([RuntimeError("network down"), FakeResponse(html)])
+            # 首词: API 失败 + HTML 降级也失败; 次词: API 失败 + HTML 成功
+            sess = FakeSession([_api_fail(), RuntimeError("network down"),
+                                _api_fail(), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
         self.assertEqual(len(items), 1)
@@ -370,7 +391,8 @@ class CrawlBehaviorTest(unittest.TestCase):
         """T13: 无 job-card-wrapper 页面 → [] 不抛, 产物 jobs:[] 结构完整"""
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="x", output_dir=tmp)
-            sess = FakeSession([FakeResponse("<html>验证码, 请完成安全验证</html>")])
+            sess = FakeSession([_api_fail(),
+                                FakeResponse("<html>验证码, 请完成安全验证</html>")])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
                 items = c.crawl(sess)
@@ -386,23 +408,23 @@ class CrawlBehaviorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(queries=["a", "b"], max_items=2, output_dir=tmp,
                                     details=False)
-            sess = FakeSession([FakeResponse(html), FakeResponse(html)])
+            sess = FakeSession([_api_fail(), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
         self.assertEqual(len(items), 2)
-        self.assertEqual(len(sess.calls), 1)  # 首个请求已满 2 条 → 早停
+        self.assertEqual(len(sess.calls), 2)  # API 失败 + HTML 已满 2 条 → 早停, 第 2 词不再请求
 
     def test_pagination(self):
         """T15: pages=2 → 2 次 get, 第 2 页 URL 含 page=2; 第 2 页空 → 停"""
         html = _page(_card("1"))
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="x", pages=2, output_dir=tmp, details=False)
-            sess = FakeSession([FakeResponse(html),
-                                FakeResponse("<html>empty</html>")])
+            sess = FakeSession([_api_fail(), FakeResponse(html),
+                                _api_fail(), FakeResponse("<html>empty</html>")])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
-        self.assertEqual(len(sess.calls), 2)
-        self.assertIn("page=2", sess.calls[1][0])
+        self.assertEqual(len(sess.calls), 4)
+        self.assertIn("page=2", sess.calls[3][0])   # 第 2 页 HTML 降级请求
         self.assertEqual(len(items), 1)  # 第 2 页空 → 停, 不丢第 1 页结果
 
 
@@ -416,7 +438,7 @@ class ArtifactTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="x", output_dir=tmp, details=False)
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
-                c.crawl(FakeSession([FakeResponse(html)]))
+                c.crawl(FakeSession([_api_fail(), FakeResponse(html)]))
             path = os.path.join(tmp, _today(), "joblist.json")
             self.assertTrue(os.path.exists(path))
             with open(path, encoding="utf-8") as f:
@@ -433,7 +455,7 @@ class ArtifactTest(unittest.TestCase):
             self.assertEqual(len(data["jobs"]), 2)
             # 幂等: 同日重跑 → 同路径覆盖, jobs 不翻倍
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
-                c.crawl(FakeSession([FakeResponse(html)]))
+                c.crawl(FakeSession([_api_fail(), FakeResponse(html)]))
             with open(path, encoding="utf-8") as f:
                 data2 = json.load(f)
             self.assertEqual(len(data2["jobs"]), 2)
@@ -448,20 +470,20 @@ class ArtifactTest(unittest.TestCase):
                  mock.patch("intel.collectors.boss_zhipin.os.replace",
                             side_effect=OSError("readonly fs")), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
-                items = c.crawl(FakeSession([FakeResponse(html)]))
+                items = c.crawl(FakeSession([_api_fail(), FakeResponse(html)]))
         self.assertEqual(len(items), 1)
 
     def test_crawl_boom_returns_partial(self):
         """T18: get 全抛 → 返回 [] 不抛, 产物 jobs:[] 合法"""
         with tempfile.TemporaryDirectory() as tmp:
             c = BossZhipinCollector(query="x", output_dir=tmp)
-            sess = FakeSession([RuntimeError("boom")])
+            sess = FakeSession([_api_fail(), RuntimeError("boom")])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
             self.assertEqual(items, [])
             data = _read_joblist(tmp)
             self.assertEqual(data["jobs"], [])
-            self.assertEqual(data["stats"]["failed_requests"], 1)
+            self.assertEqual(data["stats"]["failed_requests"], 2)  # API + HTML 降级均失败
 
 
 if __name__ == "__main__":

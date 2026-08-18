@@ -22,6 +22,7 @@ import random
 import re
 import tempfile
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -31,6 +32,14 @@ from intel.core.registry import register
 logger = logging.getLogger("intel.boss_zhipin")
 
 BOSS_BASE = "https://www.zhipin.com"
+
+# ---------- API 直连常量(design §2.3, 主路线: requests + cookie 直连 JSON API) ----------
+API_LIST_URL = "https://www.zhipin.com/wapi/zpgeek/search/joblist.json"
+API_DETAIL_URL = "https://www.zhipin.com/wapi/zpgeek/job/detail.json"
+API_PAGE_SIZE = 30
+API_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36")
+LIST_REFERER = "https://www.zhipin.com/web/geek/job"
 
 # ---------- 默认参数(design §1.2) ----------
 DEFAULT_CITY = "101020100"      # 上海
@@ -184,11 +193,89 @@ def _link_hash(url: str) -> str:
     return hashlib.sha256(path.encode("utf-8")).hexdigest()
 
 
-def _build_url(term: str, city: str, page: int = 1) -> str:
+def _build_url(term: str, city: str, page: int = 1, api: bool = False) -> str:
+    """构造列表页 URL: api=True → joblist.json 直连(主路线); 否则 HTML 模式(M2a/M2b 不变)"""
+    if api:
+        p = {"query": term, "city": city, "page": page, "pageSize": API_PAGE_SIZE}
+        return API_LIST_URL + "?" + urlencode(p)
     params = {"query": term, "city": city}
     if page > 1:
         params["page"] = page
     return BOSS_BASE + "/web/geek/job?" + urlencode(params)
+
+
+def _build_api_detail_url(encrypt_job_id: str, lid: str, security_id: str) -> str:
+    """详情 API URL: jobId/lid/securityId 为会话作用域参数, 落盘前 strip(design §2.5)"""
+    return (API_DETAIL_URL + "?" +
+            urlencode({"jobId": encrypt_job_id, "lid": lid, "securityId": security_id}))
+
+
+def _api_headers(referer: str) -> dict:
+    """API 直连请求头: Chrome 138 UA + Referer + Accept JSON(design §2.3)"""
+    return {"User-Agent": API_UA, "Referer": referer,
+            "Accept": "application/json, text/plain, */*"}
+
+
+def _clean_text(s: str) -> str:
+    """仅折叠空白、不去标签: postDescription 是明文, 可能含 < > 等字面字符(design §2.5)"""
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _area_from_job(j: dict) -> str:
+    """area: cityName + areaDistrict + businessDistrict 以 · 拼接, 部分缺失拼现有, 全缺 ''"""
+    parts = [j.get("cityName"), j.get("areaDistrict"), j.get("businessDistrict")]
+    return "·".join(p for p in parts if isinstance(p, str) and p.strip())
+
+
+def _parse_joblist_json(payload, term: str, q: dict) -> list[dict] | None:
+    """列表 API 载荷 → 记录列表; 失败(非 dict/code≠0/jobList 非 list) → None(降级 HTML)
+
+    code==0 且 jobList 空 → [] (合法空页, 非降级)。缺 encryptJobId/jobName → 跳过该条。
+    salary 恒置 ""(字体反爬无明文, 不猜测, design §2.4)。
+    """
+    if not isinstance(payload, dict) or payload.get("code") != 0:
+        return None                        # code≠0 / 非 dict → 视为 API 失败(降级)
+    jobs = (payload.get("zpData") or {}).get("jobList")
+    if not isinstance(jobs, list):
+        return None                        # 结构异常 → 降级
+    out = []
+    for j in jobs:
+        if not isinstance(j, dict):
+            continue
+        eid = j.get("encryptJobId")
+        name = j.get("jobName") or ""
+        if not eid or not name:
+            continue                       # 缺关键字段跳过(不虚构)
+        url = f"https://www.zhipin.com/job_detail/{eid}.html"
+        out.append({
+            "job_title": name,
+            "company": j.get("brandName") or "",
+            "industry": j.get("brandIndustry") or "",
+            "scale": j.get("brandScaleName") or "",
+            "experience": j.get("jobExperience") or "",
+            "education": j.get("jobDegree") or "",
+            "area": _area_from_job(j),
+            "salary": "",                  # API 无明文(字体反爬), 不猜测
+            "url": url,
+            "link_hash": _link_hash(url),
+            "query": term,
+            "direction_id": q.get("direction_id", ""),
+            "direction_name": q.get("direction_name", ""),
+            "encryptJobId": eid,
+            "lid": j.get("lid") or "",
+            "securityId": j.get("securityId") or "",
+        })
+    return out                             # code==0 且 jobList 空 → [](合法空页)
+
+
+def _parse_detail_json(payload) -> tuple[str, str]:
+    """详情 API 载荷 → (jd_full, jd_status); 失败→failed, 空/缺失→empty, 绝不虚构"""
+    if not isinstance(payload, dict) or payload.get("code") != 0:
+        return "", "failed"
+    jd = ((payload.get("zpData") or {}).get("jobInfo") or {}).get("postDescription")
+    if isinstance(jd, str) and _clean_text(jd):
+        return _clean_text(jd), "ok"
+    return "", "empty"
 
 
 def _to_int(value, default: int) -> int:
@@ -306,7 +393,31 @@ def _atomic_write_json(path: str, data: dict) -> None:
         raise
 
 
-# ---------- cookie 加载与归一化(design §1.5.1, EditThisCookie → playwright) ----------
+# ---------- cookie 加载与归一化(design §1.5.1 + §2.2 双格式) ----------
+
+@dataclass
+class Cookies:
+    """cookie 双格式: requests 用 dict{name:value}, render/playwright 用 list[dict]"""
+    requests: dict[str, str]   # {name: value} —— requests.Session.get(cookies=) 用
+    playwright: list[dict]     # [{name,value,domain,path,...}] —— render/playwright 用
+
+
+def _is_render_aware(sess) -> bool:
+    """duck-typing: 渲染包装有 _session 属性; 裸 requests.Session / 测试 FakeSession 无"""
+    return getattr(sess, "_session", None) is not None
+
+
+def _raw_session(sess):
+    """API 直连: 渲染包装取内层 requests.Session; 裸 Session 原样返回(design §2.2)"""
+    return getattr(sess, "_session", None) or sess
+
+
+def _cookies_for_html(sess, cookies: Cookies | None):
+    """HTML 降级/详情路径的 cookie 格式: render 感知→playwright list; 裸 requests→dict; 无→None"""
+    if cookies is None:
+        return None
+    return cookies.playwright if _is_render_aware(sess) else cookies.requests
+
 
 def _normalize_cookie(c) -> dict | None:
     """单条 EditThisCookie → playwright add_cookies 格式; 非法/非白名单域 → None
@@ -343,9 +454,11 @@ def _normalize_cookie(c) -> dict | None:
     return out
 
 
-def _load_cookies(path: str) -> list[dict] | None:
-    """读 cookie 文件 → 归一化列表; 缺失/坏/空/全丢弃 → warning + None(无 cookie 跑)
+def _load_cookies(path: str) -> Cookies | None:
+    """读 cookie 文件 → 双格式 Cookies; 缺失/坏/空/全丢弃 → warning + None(无 cookie 跑)
 
+    对每条 _normalize_cookie(c) 命中后同时构建 requests dict 与 playwright list;
+    _normalize_cookie 不改; 若 requests 为空 → warning + None(M2a 无 cookie 行为不变)。
     日志仅报 path + 原因 + 条数, 绝不输出 cookie 名/值(红线)。
     """
     try:
@@ -362,16 +475,18 @@ def _load_cookies(path: str) -> list[dict] | None:
     if not isinstance(raw, list) or not raw:
         logger.warning("BOSS cookie 文件为空或非法(%s), 无 cookie 采集", path)
         return None
-    out = []
+    reqs: dict[str, str] = {}
+    plist: list[dict] = []
     for c in raw:
         n = _normalize_cookie(c)
         if n:
-            out.append(n)
-    if not out:
+            reqs[n["name"]] = n["value"]
+            plist.append(n)
+    if not reqs:
         logger.warning("BOSS cookie 全部被归一化丢弃(%s), 无 cookie 采集", path)
         return None
-    logger.info("加载 BOSS cookie %d 条", len(out))
-    return out
+    logger.info("加载 BOSS cookie %d 条", len(reqs))
+    return Cookies(requests=reqs, playwright=plist)
 
 
 def _merge_dedup(prior: list[dict], new_jobs: list[dict]) -> list[dict]:
@@ -488,6 +603,9 @@ class BossZhipinCollector(BaseCollector):
                  "new_jobs": 0, "skipped_existing": 0,
                  "detail_fetched": 0, "detail_failed": 0, "detail_empty": 0}
         cookies = _load_cookies(self.cookies_path)   # None → 无 cookie(M2a 行为)
+        # 双格式: API 直连用 dict; HTML 降级按会话类型选格式(render 感知→list)
+        req_cookies = cookies.requests if cookies else None
+        html_cookies = _cookies_for_html(sess, cookies)
         pool = _load_keyword_pool(self.keywords_path)
         queries = _resolve_queries(pool, self.query, self.queries,
                                    DEFAULT_REPRESENTATIVE_QUERIES)
@@ -510,24 +628,22 @@ class BossZhipinCollector(BaseCollector):
                         if len(jobs) >= self.max_items:  # E10 早停
                             return self._finish(jobs, stats, queries, prior_jobs)
                         _gate()                         # 频率控制(列表请求)
-                        url = _build_url(term, self.city, page)
-                        try:
-                            r = sess.get(url, timeout=30,
-                                         **({"cookies": cookies} if cookies else {}))
-                            r.raise_for_status()
-                        except Exception as e:           # E4 单页失败不中断
+                        recs = self._fetch_list_api(sess, term, page, q, req_cookies)
+                        if recs is None:                # API 失败 → 降级 HTML
                             stats["failed_requests"] += 1
-                            logger.warning("BOSS 请求失败 %s: %s", url, e)
-                            continue
-                        text = r.text or ""
-                        if "job-card-wrapper" not in text:  # E5 反爬/无卡片 → break 该 query
-                            stats["blocked_queries"] += 1
-                            logger.warning("BOSS 页面无职位卡片(反爬/结构变更), 放弃该查询: %s", url)
-                            break
-                        for chunk in _split_cards(text):
-                            rec = self._parse_card(chunk, term, q)
-                            if not rec:
+                            logger.warning("BOSS API 列表失败, 降级 HTML: term=%s page=%s",
+                                           term, page)
+                            recs, status = self._fetch_list_html(sess, term, page, q,
+                                                                 html_cookies)
+                            if status == "blocked":     # 反爬/无卡片 → 放弃该 query
+                                stats["blocked_queries"] += 1
+                                logger.warning("BOSS 页面无职位卡片(反爬/结构变更), "
+                                               "放弃该查询: term=%s page=%s", term, page)
+                                break
+                            if status == "error":       # 降级请求异常 → 下一 page
+                                stats["failed_requests"] += 1
                                 continue
+                        for rec in recs:
                             stats["cards_seen"] += 1
                             h = rec["link_hash"]
                             if h in seen:                # E9 本次运行跨词去重(保留首溯源)
@@ -536,10 +652,14 @@ class BossZhipinCollector(BaseCollector):
                                 stats["skipped_existing"] += 1
                                 continue
                             seen.add(h)
-                            if self.details:             # 详情页二次渲染(新卡片)
+                            if self.details:             # 详情(新卡片)
                                 _gate()                  # 频率控制(详情请求, 共用门控)
-                                jd_full, jd_status = self._fetch_jd(sess, rec["url"],
-                                                                    cookies)
+                                if rec.get("encryptJobId"):   # API 卡片 → 详情 API
+                                    jd_full, jd_status = self._fetch_jd_api(sess, rec,
+                                                                            req_cookies)
+                                else:                        # HTML 降级卡片 → HTML 详情
+                                    jd_full, jd_status = self._fetch_jd(sess, rec["url"],
+                                                                        html_cookies)
                                 rec["jd_full"], rec["jd_status"] = jd_full, jd_status
                                 if jd_status == "ok":
                                     stats["detail_fetched"] += 1
@@ -551,9 +671,64 @@ class BossZhipinCollector(BaseCollector):
                                 rec["jd_full"], rec["jd_status"] = "", "skipped"
                             jobs.append(rec)
                         stats["requests"] += 1
+                        if not recs:                     # 合法空页 → 停(与 M2b 空页语义一致)
+                            break
         except Exception:                                 # E12 顶层兜底: 返回已收集部分
             logger.exception("boss crawl 未预期异常")
         return self._finish(jobs, stats, queries, prior_jobs)
+
+    # ---------- API 直连(design §2.3-2.5, 主路线) ----------
+
+    def _fetch_list_api(self, sess, term: str, page: int, q: dict,
+                        req_cookies) -> list[dict] | None:
+        """列表 API 直连: 裸 requests 路径, cookie 用 dict; 任何失败 → None(上层降级 HTML)"""
+        url = _build_url(term, self.city, page, api=True)
+        kwargs = {"headers": _api_headers(LIST_REFERER), "timeout": 30}
+        if req_cookies:                       # 无 cookie 不传 cookies kwarg(M2a 语义)
+            kwargs["cookies"] = req_cookies
+        try:
+            r = _raw_session(sess).get(url, **kwargs)
+            r.raise_for_status()
+            payload = r.json()
+        except Exception:                     # 非200/非JSON/网络异常 → 上层降级
+            return None
+        return _parse_joblist_json(payload, term, q)
+
+    def _fetch_jd_api(self, sess, rec: dict, req_cookies) -> tuple[str, str]:
+        """详情 API 直连: detail.json → postDescription; 失败 → ("", "failed"), 不中断"""
+        url = _build_api_detail_url(rec["encryptJobId"], rec["lid"], rec["securityId"])
+        kwargs = {"headers": _api_headers(rec["url"]), "timeout": 30}  # Referer=详情页
+        if req_cookies:
+            kwargs["cookies"] = req_cookies
+        try:
+            r = _raw_session(sess).get(url, **kwargs)
+            r.raise_for_status()
+            payload = r.json()
+        except Exception:
+            return "", "failed"
+        return _parse_detail_json(payload)
+
+    # ---------- HTML 降级路径(design §2.6, 保留 M2b 能力) ----------
+
+    def _fetch_list_html(self, sess, term: str, page: int, q: dict,
+                         html_cookies) -> tuple[list[dict], str]:
+        """HTML 列表降级: 卡片解析失败 → ("ok", recs)/("blocked")/("error")"""
+        url = _build_url(term, self.city, page)          # HTML 模式
+        try:
+            r = sess.get(url, timeout=30,
+                         **({"cookies": html_cookies} if html_cookies else {}))
+            r.raise_for_status()
+        except Exception:
+            return [], "error"                            # 上层 failed_requests++ + continue
+        text = r.text or ""
+        if "job-card-wrapper" not in text:
+            return [], "blocked"                          # 上层 blocked_queries++ + break
+        recs = []
+        for chunk in _split_cards(text):
+            rec = self._parse_card(chunk, term, q)        # 原 M2a/M2b HTML 解析器, 不改
+            if rec:
+                recs.append(rec)
+        return recs, "ok"
 
     # ---------- 详情页 JD 采集(design §1.5.2) ----------
 
@@ -608,9 +783,14 @@ class BossZhipinCollector(BaseCollector):
                 prior_jobs: list[dict]) -> list[NewsItem]:
         # merge 历史 ∪ 本次新采集(link_hash 去重, prior 保留首次溯源)
         final_jobs = _merge_dedup(prior_jobs, jobs)
-        for rec in final_jobs:  # 向后兼容: 旧产物条目补齐 jd 字段
+        for rec in final_jobs:  # strip 详情临时字段(仅详情请求用, 不入产物) + 向后兼容补齐
+            rec.pop("encryptJobId", None)
+            rec.pop("lid", None)
+            rec.pop("securityId", None)
             rec.setdefault("jd_full", "")
             rec.setdefault("jd_status", "skipped")
+            rec.setdefault("industry", "")  # API 新字段, 历史记录补齐
+            rec.setdefault("scale", "")
         stats["unique_jobs"] = len(final_jobs)
         stats["new_jobs"] = len(jobs)
         self._write_joblist(final_jobs, stats, queries)

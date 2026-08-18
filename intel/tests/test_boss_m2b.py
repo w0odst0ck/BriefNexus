@@ -38,13 +38,19 @@ from intel.core.base import CST
 
 
 class FakeResponse:
-    def __init__(self, text="", status=200):
+    def __init__(self, text="", status=200, json_body=None):
         self._text = text
         self._status = status
+        self._json = json_body
 
     @property
     def text(self):
         return self._text
+
+    def json(self, **kw):
+        if self._json is None:
+            raise ValueError("no JSON body")   # 模拟「非 JSON」→ API 降级
+        return self._json
 
     def raise_for_status(self):
         if not (200 <= self._status < 400):
@@ -89,6 +95,19 @@ def _card(pid, title="岗位", company="某某科技", salary="30-50K"):
 
 def _page(*cards):
     return "<html><body>" + "".join(cards) + "</body></html>"
+
+
+def _api_fail():
+    """API 失败响应(非 JSON)→ crawl 自动降级 HTML(design §2.3)"""
+    return FakeResponse(json_body=None)
+
+
+def _html_session(*cards, detail=None):
+    """HTML 降级路径专用: 先 API 失败、再 HTML 列表、可选 HTML 详情"""
+    responses = [_api_fail(), FakeResponse(_page(*cards))]
+    if detail is not None:
+        responses.append(FakeResponse(detail))
+    return FakeSession(responses)
 
 
 def _detail(pid=1, jd=None):
@@ -144,12 +163,12 @@ class CookieLoadTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=True)
-            sess = FakeSession([FakeResponse(_page(_card("1"))), FakeResponse(_detail())])
+            sess = _html_session(_card("1"), detail=_detail())
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
                 items = c.crawl(sess)
         self.assertEqual(len(items), 1)
-        self.assertEqual(len(sess.calls), 2)  # 列表 + 详情
+        self.assertEqual(len(sess.calls), 3)  # API 失败 + HTML 列表 + HTML 详情
         for _url, kwargs in sess.calls:
             self.assertNotIn("cookies", kwargs)
 
@@ -161,11 +180,12 @@ class CookieLoadTest(unittest.TestCase):
                 f.write("{bad json{{{")
             c = BossZhipinCollector(query="x", output_dir=tmp, cookies_path=path,
                                     details=False)
-            sess = FakeSession([FakeResponse(_page(_card("1")))])
+            sess = FakeSession([FakeResponse(json_body=None),
+                                FakeResponse(_page(_card("1")))])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
                 c.crawl(sess)
-        self.assertNotIn("cookies", sess.calls[0][1])
+        self.assertNotIn("cookies", sess.calls[1][1])  # HTML 降级请求同样无 cookie
 
     def test_cookie_normalize_edittocookie(self):
         """B3: expirationDate→expires / no_restriction→None / domain 去点 /
@@ -212,21 +232,21 @@ class CookieLoadTest(unittest.TestCase):
 class DetailCrawlTest(unittest.TestCase):
 
     def test_crawl_injects_cookies(self):
-        """B5: crawl 的 sess.get 带 cookies= 归一化列表(playwright 格式)"""
+        """B5: crawl 注入 cookie — 裸 requests 会话(HTML 降级)收到 dict 格式(design §3.3)"""
         with tempfile.TemporaryDirectory() as tmp:
             path = _write_cookies(tmp, EDIT_THIS_COOKIES)
             c = BossZhipinCollector(query="x", output_dir=tmp, cookies_path=path,
                                     details=False)
-            sess = FakeSession([FakeResponse(_page(_card("1")))])
+            sess = FakeSession([FakeResponse(json_body=None),
+                                FakeResponse(_page(_card("1")))])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 c.crawl(sess)
-        _url, kwargs = sess.calls[0]
+        _url, kwargs = sess.calls[1]          # HTML 降级请求(裸 requests → dict 格式)
         sent = kwargs["cookies"]
-        self.assertEqual(sent[0]["name"], "__zp_stoken__")
-        self.assertEqual(sent[0]["value"], "SECRET_TOKEN_VALUE")
-        self.assertEqual(sent[0]["domain"], "zhipin.com")
-        self.assertEqual(sent[0]["sameSite"], "None")
-        self.assertEqual(sent[1]["name"], "wt2")
+        self.assertIsInstance(sent, dict)     # 不再传 playwright list(原 TypeError 根因)
+        self.assertEqual(sent["__zp_stoken__"], "SECRET_TOKEN_VALUE")
+        self.assertEqual(sent["wt2"], "SECRET_WT2_VALUE")
+        self.assertEqual(sent["zp_session"], "SECRET_SESSION_VALUE")
 
     def test_detail_fetch_extracts_jd_full(self):
         """B6: 列表页卡片 → 第 2 次 get 到详情 URL → jd_full 取 job-sec-text"""
@@ -234,17 +254,18 @@ class DetailCrawlTest(unittest.TestCase):
             path = _write_cookies(tmp, EDIT_THIS_COOKIES)
             c = BossZhipinCollector(query="x", output_dir=tmp, cookies_path=path,
                                     details=True)
-            sess = FakeSession([FakeResponse(_page(_card("1", title="大模型工程师"))),
-                                FakeResponse(_detail(jd='<div class="job-sec-text">'
-                                                     '岗位职责：开发大模型推理引擎</div>'))])
+            sess = _html_session(
+                _card("1", title="大模型工程师"),
+                detail=_detail(jd='<div class="job-sec-text">'
+                                  '岗位职责：开发大模型推理引擎</div>'))
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
             data = _read_joblist(tmp)
         rec = items[0].raw_data["job"]
         self.assertEqual(rec["jd_full"], "岗位职责：开发大模型推理引擎")
         self.assertEqual(rec["jd_status"], "ok")
-        self.assertEqual(sess.calls[1][0], "https://www.zhipin.com/job_detail/1.html")
-        self.assertIn("cookies", sess.calls[1][1])  # 详情请求同样注入 cookie
+        self.assertEqual(sess.calls[2][0], "https://www.zhipin.com/job_detail/1.html")
+        self.assertIn("cookies", sess.calls[2][1])  # HTML 详情请求同样注入 cookie(dict)
         self.assertEqual(data["stats"]["detail_fetched"], 1)
 
     def test_jd_extract_multilevel_fallback(self):
@@ -270,7 +291,8 @@ class DetailCrawlTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=True)
-            sess = FakeSession([FakeResponse(_page(_card("2", title="幸存岗位"))),
+            sess = FakeSession([FakeResponse(json_body=None),
+                                FakeResponse(_page(_card("2", title="幸存岗位"))),
                                 RuntimeError("detail network down")])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
@@ -288,7 +310,8 @@ class DetailCrawlTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=True)
-            sess = FakeSession([FakeResponse(_page(_card("3"))),
+            sess = FakeSession([FakeResponse(json_body=None),
+                                FakeResponse(_page(_card("3"))),
                                 FakeResponse("<html>请完成安全验证</html>")])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
@@ -317,7 +340,7 @@ class IncrementalDedupTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=False)
-            sess = FakeSession([FakeResponse(html)])
+            sess = FakeSession([_api_fail(), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
             data = _read_joblist(tmp)
@@ -339,7 +362,7 @@ class IncrementalDedupTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=False, force=True)
-            sess = FakeSession([FakeResponse(html)])
+            sess = FakeSession([_api_fail(), FakeResponse(html)])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
             data = _read_joblist(tmp)
@@ -355,7 +378,7 @@ class IncrementalDedupTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=False)
-            sess = FakeSession([FakeResponse(_page(_card("1")))])
+            sess = FakeSession([_api_fail(), FakeResponse(_page(_card("1")))])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 items = c.crawl(sess)
             data = _read_joblist(tmp)
@@ -370,7 +393,7 @@ class IncrementalDedupTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=False)
-            sess = FakeSession([FakeResponse(_page(_card("1")))])
+            sess = FakeSession([_api_fail(), FakeResponse(_page(_card("1")))])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="WARNING"):
                 items = c.crawl(sess)
@@ -389,7 +412,7 @@ class ArtifactAndSafetyTest(unittest.TestCase):
             path = _write_cookies(tmp, EDIT_THIS_COOKIES)
             c = BossZhipinCollector(query="x", output_dir=tmp, cookies_path=path,
                                     details=True)
-            sess = FakeSession([FakeResponse(_page(_card("1"))),
+            sess = FakeSession([_api_fail(), FakeResponse(_page(_card("1"))),
                                 FakeResponse(_detail())])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 c.crawl(sess)
@@ -416,7 +439,7 @@ class ArtifactAndSafetyTest(unittest.TestCase):
             path = _write_cookies(tmp, EDIT_THIS_COOKIES)
             c = BossZhipinCollector(query="x", output_dir=tmp, cookies_path=path,
                                     details=True)
-            sess = FakeSession([FakeResponse(_page(_card("1"))),
+            sess = FakeSession([_api_fail(), FakeResponse(_page(_card("1"))),
                                 FakeResponse(_detail())])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"), \
                  self.assertLogs("intel.boss_zhipin", level="INFO") as cm:
@@ -433,7 +456,7 @@ class ArtifactAndSafetyTest(unittest.TestCase):
             c = BossZhipinCollector(query="x", output_dir=tmp,
                                     cookies_path="/nonexistent/cookies.json",
                                     details=True, force=False)
-            sess = FakeSession([FakeResponse(_page(_card("1")))])
+            sess = FakeSession([_api_fail(), FakeResponse(_page(_card("1")))])
             with mock.patch("intel.collectors.boss_zhipin.time.sleep"):
                 c.crawl(sess)
             data = _read_joblist(tmp)
