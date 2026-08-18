@@ -48,6 +48,21 @@ DEFAULT_MAX_ITEMS = 30
 DEFAULT_DELAY = 5.0             # 硬下限 5.0(小于则 clamp)
 DEFAULT_JITTER = 2.0            # 下限 0
 
+# ---------- 自适应频率控制(boss-backoff design §1.2): 结果分类 + 调参常量 ----------
+KIND_OK           = "ok"
+KIND_FAIL         = "fail"          # 网络异常 / 非2xx3xx / 非JSON / code≠0(非风控)
+KIND_RISK         = "risk"          # code==37 或 message 含「环境异常」
+KIND_RATE_LIMITED = "rate_limited"  # HTTP 429
+
+BACKOFF_CAP          = 60.0    # 指数退避 base 上限(秒), jitter 在其后 ±20%
+JITTER_RATIO         = 0.2     # 退避 ±20% jitter
+RETRY_AFTER_CAP      = 300     # Retry-After 钳制上限(秒)
+RISK_BACKOFF_START_N = 3       # 风控退避 n 起始位(base × 2^3 = 40s, "长退避")
+DETAIL_RISK_HALT     = 2       # 详情连续风控 ≥2 → 停详情
+DETAIL_FAIL_HALT     = 3       # 详情连续非风控失败 ≥3 → 停详情
+RISK_CODE            = 37
+RISK_MSG_FRAGMENT    = "环境异常"
+
 # cookie 默认路径: 用户已导出的登录态(EditThisCookie 格式, chmod 600, repo 外)
 DEFAULT_COOKIES_PATH = os.path.expanduser("~/.config/boss/cookies.json")
 # sameSite 归一化: EditThisCookie 值 → playwright add_cookies 值(其余省略)
@@ -504,6 +519,80 @@ def _merge_dedup(prior: list[dict], new_jobs: list[dict]) -> list[dict]:
     return merged
 
 
+# ---------- 自适应频率控制(boss-backoff design §1.2-1.3): 数据结构 + 纯函数 ----------
+
+@dataclass
+class _Outcome:
+    """单次 API 请求的结果分类"""
+    kind: str                      # KIND_*
+    status: int = 0                # HTTP 状态码; 网络异常=0
+    retry_after: int | None = None # 仅 429 且头合法时非 None(已钳制 [0,300])
+    payload: object = None         # 列表: list[dict]|None; 详情: (jd_full,jd_status)|None
+
+
+class _BackoffState:
+    """per-crawl 频率控制状态机(boss-backoff design §1.2)"""
+    __slots__ = ("backoffs", "circuit_open", "detail_fail_streak", "detail_halt",
+                 "first", "last_kind", "last_retry_after", "n", "rate_limited",
+                 "risk_blocked", "risk_detail_streak")
+
+    def __init__(self):
+        self.first = True            # 首个请求前不睡(既有语义)
+        self.last_kind = KIND_OK
+        self.last_retry_after = None
+        self.n = 0                   # 连续失败次数(全局, 成功重置)
+        self.risk_detail_streak = 0  # 详情连续风控次数
+        self.detail_fail_streak = 0  # 详情连续非风控失败次数
+        self.detail_halt = False     # 停详情(剩余 jd_status="skipped")
+        self.circuit_open = False    # 熔断整个采集
+        self.risk_blocked = False    # 熔断由风控触发
+        self.backoffs = 0            # 退避次数(仅失败类退避, 不含成功基频)
+        self.rate_limited = 0        # 429 次数
+
+
+def _read_retry_after(headers) -> int | None:
+    """Retry-After 头 → 整数秒(钳制 [0, RETRY_AFTER_CAP]); 大小写不敏感; 非法/缺失 → None"""
+    if not headers:
+        return None
+    raw = None
+    for key in ("Retry-After", "retry-after"):
+        if key in headers:
+            raw = headers[key]
+            break
+    if raw is None:  # 其他大小写变体(如 RETRY-AFTER)兜底扫描
+        for key, value in headers.items():
+            if str(key).lower() == "retry-after":
+                raw = value
+                break
+    if raw is None:
+        return None
+    try:
+        return min(max(int(str(raw).strip()), 0), RETRY_AFTER_CAP)
+    except (TypeError, ValueError):
+        return None
+
+
+def _classify_api(status: int, payload) -> str:
+    """HTTP 状态码 + JSON 载荷 → 四分类(KIND_*)
+
+    BOSS 伪装 `200 + {"code":37}`, 故先判 status 再判 payload;
+    `str(code)==str(RISK_CODE)` 兼容 code 为字符串的脏数据。
+    """
+    if status == 429:
+        return KIND_RATE_LIMITED
+    if status and not (200 <= status < 400):
+        return KIND_FAIL
+    if not isinstance(payload, dict):
+        return KIND_FAIL
+    code = payload.get("code")
+    msg = str(payload.get("message") or "")
+    if code == RISK_CODE or str(code) == str(RISK_CODE) or RISK_MSG_FRAGMENT in msg:
+        return KIND_RISK
+    if code != 0:
+        return KIND_FAIL
+    return KIND_OK
+
+
 @register("boss_zhipin")
 class BossZhipinCollector(BaseCollector):
     source_name = "boss_zhipin"
@@ -547,10 +636,84 @@ class BossZhipinCollector(BaseCollector):
             force = os.environ.get("BN_BOSS_FORCE")
         self.force = _to_bool(force, False)         # 默认增量, force 才重采
 
-    # ---------- 频率控制 ----------
+    # ---------- 频率控制(boss-backoff design §1.3-1.4) ----------
 
     def _sleep_between(self) -> None:
         time.sleep(max(self.delay, 5.0) + random.uniform(0.0, max(self.jitter, 0.0)))
+
+    def _api_get(self, sess, url: str, kwargs: dict) -> _Outcome:
+        """统一 GET 入口 → _Outcome 分类
+
+        真实 requests.Response 有 status_code/headers → 走新分支(含 429 识别);
+        无 status_code 的会话(既有测试替身) → raise_for_status() + json() 回退,
+        语义与旧 _fetch_list_api/_fetch_jd_api 等价(既有测试零改动)。
+        """
+        try:
+            r = _raw_session(sess).get(url, **kwargs)
+        except Exception:
+            return _Outcome(KIND_FAIL, status=0)
+        status = getattr(r, "status_code", None)
+        if status is None:                       # 无 status_code 的会话(测试替身): 回退旧判定
+            try:
+                r.raise_for_status()
+                status = 200
+            except Exception:
+                return _Outcome(KIND_FAIL, status=0)
+        if status == 429:
+            return _Outcome(KIND_RATE_LIMITED, status=429,
+                            retry_after=_read_retry_after(getattr(r, "headers", None)))
+        payload = None
+        if status and 200 <= status < 400:
+            try:
+                payload = r.json()
+            except Exception:
+                payload = None
+        return _Outcome(_classify_api(status, payload), status=status, payload=payload)
+
+    def _record_success(self, st: _BackoffState) -> None:
+        """成功迁移: 全局失败计数归零, 重置为基频"""
+        st.n = 0
+        st.last_kind = KIND_OK
+        st.last_retry_after = None
+
+    def _record_failure(self, st: _BackoffState, kind: str, retry_after=None) -> None:
+        """失败迁移: n++, 记录类别与 retry_after(429 计数)"""
+        st.n += 1
+        st.last_kind = kind
+        st.last_retry_after = retry_after
+        if kind == KIND_RATE_LIMITED:
+            st.rate_limited += 1
+
+    def _backoff_base(self, n: int) -> float:
+        """指数退避 base: delay × 2^n, 封顶 BACKOFF_CAP"""
+        return min(self.delay * (2.0 ** n), BACKOFF_CAP)
+
+    def _risk_backoff_base(self, n: int) -> float:
+        """风控退避 base: 从 n=RISK_BACKOFF_START_N 高位起算(长退避 ≥40s)"""
+        return min(self.delay * (2.0 ** max(n, RISK_BACKOFF_START_N)), BACKOFF_CAP)
+
+    def _backoff_sleep(self, st: _BackoffState) -> None:
+        """退避睡眠: 按 last_kind 选 base(Retry-After | 风控高位 | 指数) + ±20% jitter"""
+        if st.last_kind == KIND_RATE_LIMITED and st.last_retry_after is not None:
+            base = float(st.last_retry_after)
+        elif st.last_kind == KIND_RISK:
+            base = self._risk_backoff_base(st.n)
+        else:
+            base = self._backoff_base(st.n)
+        st.backoffs += 1
+        d = base * random.uniform(1.0 - JITTER_RATIO, 1.0 + JITTER_RATIO)
+        logger.warning("BOSS 退避 %.1fs (kind=%s n=%d)", d, st.last_kind, st.n)
+        time.sleep(d)
+
+    def _gate(self, st: _BackoffState) -> None:
+        """列表+详情所有请求共用的频率门控: 首个请求前不睡; 失败走退避, 成功走基频"""
+        if st.first:
+            st.first = False
+            return
+        if st.last_kind in (KIND_FAIL, KIND_RISK, KIND_RATE_LIMITED):
+            self._backoff_sleep(st)
+        else:
+            self._sleep_between()   # 原样保留: max(delay,5.0) + uniform(0, jitter)
 
     # ---------- 卡片解析 ----------
 
@@ -601,7 +764,10 @@ class BossZhipinCollector(BaseCollector):
         stats = {"requests": 0, "cards_seen": 0, "unique_jobs": 0,
                  "blocked_queries": 0, "failed_requests": 0,
                  "new_jobs": 0, "skipped_existing": 0,
-                 "detail_fetched": 0, "detail_failed": 0, "detail_empty": 0}
+                 "detail_fetched": 0, "detail_failed": 0, "detail_empty": 0,
+                 "backoffs": 0, "rate_limited": 0,
+                 "circuit_open": False, "risk_blocked": False}
+        st = _BackoffState()                       # per-crawl 频率控制状态机
         cookies = _load_cookies(self.cookies_path)   # None → 无 cookie(M2a 行为)
         # 双格式: API 直连用 dict; HTML 降级按会话类型选格式(render 感知→list)
         req_cookies = cookies.requests if cookies else None
@@ -614,35 +780,60 @@ class BossZhipinCollector(BaseCollector):
         history_hashes, prior_jobs = (set(), []) if self.force \
             else self._load_history(today)
         try:
-            first_request = [True]
-
-            def _gate() -> None:
-                """列表+详情所有请求共用的频率门控: 首个请求前不睡"""
-                if not first_request[0]:
-                    self._sleep_between()
-                first_request[0] = False
-
             for q in queries:
+                if st.circuit_open:                # 熔断 → 停止剩余 query
+                    break
                 for term in q["terms"]:
+                    if st.circuit_open:
+                        break
                     for page in range(1, self.pages + 1):
+                        if st.circuit_open:        # 熔断 → 停止剩余 page
+                            break
                         if len(jobs) >= self.max_items:  # E10 早停
-                            return self._finish(jobs, stats, queries, prior_jobs)
-                        _gate()                         # 频率控制(列表请求)
-                        recs = self._fetch_list_api(sess, term, page, q, req_cookies)
-                        if recs is None:                # API 失败 → 降级 HTML
+                            return self._finish(jobs, stats, queries, prior_jobs, st)
+
+                        # ---- 列表请求 ----
+                        self._gate(st)             # 频率控制(列表请求)
+                        out = self._fetch_list_api(sess, term, page, q, req_cookies)
+                        if out.kind == KIND_RISK:  # 风控: 长退避后重试一次
+                            self._record_failure(st, KIND_RISK)
+                            self._backoff_sleep(st)      # 长退避(≥40s)
+                            logger.warning("BOSS 列表风控(code:37), 长退避后重试一次: "
+                                           "term=%s page=%s", term, page)
+                            retry = self._fetch_list_api(sess, term, page, q, req_cookies)
+                            if retry.kind == KIND_RISK:  # 仍风控 → 熔断整个采集
+                                self._record_failure(st, KIND_RISK)
+                                st.circuit_open = True
+                                st.risk_blocked = True
+                                logger.warning("BOSS 列表风控未缓解, 熔断整个采集, "
+                                               "停止剩余 query/page")
+                                return self._finish(jobs, stats, queries, prior_jobs, st)
+                            out = retry                  # 非风控 → 按普通结果处理
+
+                        # ---- 处理列表结果 ----
+                        if out.kind == KIND_OK:
+                            self._record_success(st)
+                            recs = out.payload           # list[dict]
+                        else:                            # FAIL / RATE_LIMITED
+                            self._record_failure(st, out.kind, out.retry_after)
                             stats["failed_requests"] += 1
-                            logger.warning("BOSS API 列表失败, 降级 HTML: term=%s page=%s",
-                                           term, page)
+                            logger.warning("BOSS API 列表失败, 降级 HTML: term=%s page=%s "
+                                           "kind=%s", term, page, out.kind)
                             recs, status = self._fetch_list_html(sess, term, page, q,
                                                                  html_cookies)
-                            if status == "blocked":     # 反爬/无卡片 → 放弃该 query
+                            if status == "blocked":      # 反爬/无卡片 → 放弃该 query
+                                self._record_failure(st, KIND_FAIL)
                                 stats["blocked_queries"] += 1
                                 logger.warning("BOSS 页面无职位卡片(反爬/结构变更), "
                                                "放弃该查询: term=%s page=%s", term, page)
                                 break
-                            if status == "error":       # 降级请求异常 → 下一 page
+                            if status == "error":        # 降级请求异常 → 下一 page
+                                self._record_failure(st, KIND_FAIL)
                                 stats["failed_requests"] += 1
                                 continue
+                            self._record_success(st)     # HTML ok → 成功, 重置 n
+
+                        # ---- 逐卡片 ----
                         for rec in recs:
                             stats["cards_seen"] += 1
                             h = rec["link_hash"]
@@ -652,14 +843,49 @@ class BossZhipinCollector(BaseCollector):
                                 stats["skipped_existing"] += 1
                                 continue
                             seen.add(h)
-                            if self.details:             # 详情(新卡片)
-                                _gate()                  # 频率控制(详情请求, 共用门控)
+                            if self.details and not st.detail_halt:   # 详情(新卡片)
+                                self._gate(st)           # 频率控制(详情请求, 共用门控)
                                 if rec.get("encryptJobId"):   # API 卡片 → 详情 API
-                                    jd_full, jd_status = self._fetch_jd_api(sess, rec,
-                                                                            req_cookies)
+                                    jdout = self._fetch_jd_api(sess, rec, req_cookies)
+                                    if jdout.kind == KIND_OK:
+                                        jd_full, jd_status = jdout.payload
+                                        kind, retry_after = KIND_OK, None
+                                    else:
+                                        jd_full, jd_status = "", "failed"
+                                        kind, retry_after = jdout.kind, jdout.retry_after
                                 else:                        # HTML 降级卡片 → HTML 详情
                                     jd_full, jd_status = self._fetch_jd(sess, rec["url"],
                                                                         html_cookies)
+                                    kind = KIND_OK if jd_status in ("ok", "empty") \
+                                        else KIND_FAIL
+                                    retry_after = None
+                                if kind == KIND_OK:          # ok/empty 均为成功 → 重置
+                                    self._record_success(st)
+                                    st.risk_detail_streak = 0
+                                    st.detail_fail_streak = 0
+                                elif kind == KIND_RISK:
+                                    self._record_failure(st, KIND_RISK)
+                                    st.risk_detail_streak += 1
+                                    st.detail_fail_streak = 0
+                                    logger.warning("BOSS 详情风控(code:37) 连续 %d 次: "
+                                                   "term=%s", st.risk_detail_streak, term)
+                                    if st.risk_detail_streak >= DETAIL_RISK_HALT:
+                                        st.detail_halt = True
+                                        logger.warning("BOSS 详情连续风控≥%d次, "
+                                                       "停止详情抓取(列表保留)",
+                                                       DETAIL_RISK_HALT)
+                                else:                        # FAIL / RATE_LIMITED
+                                    self._record_failure(st, kind, retry_after)
+                                    st.detail_fail_streak += 1
+                                    st.risk_detail_streak = 0
+                                    logger.warning("BOSS 详情失败(kind=%s) 连续 %d 次: "
+                                                   "term=%s", kind, st.detail_fail_streak,
+                                                   term)
+                                    if st.detail_fail_streak >= DETAIL_FAIL_HALT:
+                                        st.detail_halt = True
+                                        logger.warning("BOSS 详情连续失败≥%d次, "
+                                                       "停止详情抓取(列表保留)",
+                                                       DETAIL_FAIL_HALT)
                                 rec["jd_full"], rec["jd_status"] = jd_full, jd_status
                                 if jd_status == "ok":
                                     stats["detail_fetched"] += 1
@@ -667,7 +893,7 @@ class BossZhipinCollector(BaseCollector):
                                     stats["detail_failed"] += 1
                                 else:
                                     stats["detail_empty"] += 1
-                            else:                        # 详情关闭 → 跳过
+                            else:                        # details=False 或 detail_halt
                                 rec["jd_full"], rec["jd_status"] = "", "skipped"
                             jobs.append(rec)
                         stats["requests"] += 1
@@ -675,38 +901,36 @@ class BossZhipinCollector(BaseCollector):
                             break
         except Exception:                                 # E12 顶层兜底: 返回已收集部分
             logger.exception("boss crawl 未预期异常")
-        return self._finish(jobs, stats, queries, prior_jobs)
+        return self._finish(jobs, stats, queries, prior_jobs, st)
 
     # ---------- API 直连(design §2.3-2.5, 主路线) ----------
 
     def _fetch_list_api(self, sess, term: str, page: int, q: dict,
-                        req_cookies) -> list[dict] | None:
-        """列表 API 直连: 裸 requests 路径, cookie 用 dict; 任何失败 → None(上层降级 HTML)"""
+                        req_cookies) -> _Outcome:
+        """列表 API 直连: 裸 requests 路径, cookie 用 dict; 分类 → _Outcome(上层分支处理)"""
         url = _build_url(term, self.city, page, api=True)
         kwargs = {"headers": _api_headers(LIST_REFERER), "timeout": 30}
         if req_cookies:                       # 无 cookie 不传 cookies kwarg(M2a 语义)
             kwargs["cookies"] = req_cookies
-        try:
-            r = _raw_session(sess).get(url, **kwargs)
-            r.raise_for_status()
-            payload = r.json()
-        except Exception:                     # 非200/非JSON/网络异常 → 上层降级
-            return None
-        return _parse_joblist_json(payload, term, q)
+        out = self._api_get(sess, url, kwargs)
+        if out.kind == KIND_OK:
+            recs = _parse_joblist_json(out.payload, term, q)   # 原函数不变
+            if recs is None:
+                out.kind = KIND_FAIL            # jobList 非 list → 结构异常降级
+            else:
+                out.payload = recs
+        return out
 
-    def _fetch_jd_api(self, sess, rec: dict, req_cookies) -> tuple[str, str]:
-        """详情 API 直连: detail.json → postDescription; 失败 → ("", "failed"), 不中断"""
+    def _fetch_jd_api(self, sess, rec: dict, req_cookies) -> _Outcome:
+        """详情 API 直连: detail.json → postDescription; 失败 → _Outcome(kind=FAIL)"""
         url = _build_api_detail_url(rec["encryptJobId"], rec["lid"], rec["securityId"])
         kwargs = {"headers": _api_headers(rec["url"]), "timeout": 30}  # Referer=详情页
         if req_cookies:
             kwargs["cookies"] = req_cookies
-        try:
-            r = _raw_session(sess).get(url, **kwargs)
-            r.raise_for_status()
-            payload = r.json()
-        except Exception:
-            return "", "failed"
-        return _parse_detail_json(payload)
+        out = self._api_get(sess, url, kwargs)
+        if out.kind == KIND_OK:
+            out.payload = _parse_detail_json(out.payload)   # → (jd_full, jd_status)
+        return out
 
     # ---------- HTML 降级路径(design §2.6, 保留 M2b 能力) ----------
 
@@ -780,7 +1004,12 @@ class BossZhipinCollector(BaseCollector):
     # ---------- 收尾: 产物 + NewsItem ----------
 
     def _finish(self, jobs: list[dict], stats: dict, queries: list[dict],
-                prior_jobs: list[dict]) -> list[NewsItem]:
+                prior_jobs: list[dict], st: _BackoffState | None = None) -> list[NewsItem]:
+        if st is not None:   # 同步 4 个频率控制统计字段(默认值已在 crawl 初始化, 恒存在)
+            stats["backoffs"] = st.backoffs
+            stats["rate_limited"] = st.rate_limited
+            stats["circuit_open"] = st.circuit_open
+            stats["risk_blocked"] = st.risk_blocked
         # merge 历史 ∪ 本次新采集(link_hash 去重, prior 保留首次溯源)
         final_jobs = _merge_dedup(prior_jobs, jobs)
         for rec in final_jobs:  # strip 详情临时字段(仅详情请求用, 不入产物) + 向后兼容补齐
