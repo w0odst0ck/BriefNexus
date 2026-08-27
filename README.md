@@ -71,7 +71,7 @@
 | C1 采集层 | 健康巡检 | ✅ 已实现 | `intel check`（2026-08-15） |
 | C1 采集层 | RSS/Atom 订阅 | ✅ 已实现 | RSSHub 本地实例 :1200 + RSSHubCollector（12 源，`research-collectors` 仓） |
 | C1 采集层 | JSON API 适配 | 🚧 规划中 | APICollector 基类（arxiv 范式泛化） |
-| C1 采集层 | 浏览器渲染（CDP） | ✅ 已实现 | render.py 子进程隔离 + 声明式 `render: true`；BOSS/东财/巨潮 3 源实装 |
+| C1 采集层 | 浏览器渲染（CDP） | ✅ 已实现 | render.py 子进程隔离 + 声明式 `render: true`；东财/巨潮 2 源实装（BOSS 已迁 research-collectors） |
 | C1 采集层 | 文档/PDF 解析 | ✅ 已实现 | MinerU 子进程隔离（research-collectors pdf_parse，真实解析验证） |
 | C1 采集层 | 通用变更监控 | ✅ 已实现 | changedetection.io :5000 + `compare_snapshots --push` 快照 diff |
 | C2 处理层 | 去重/分类 | ✅ 部分 | 去重 ✅；分类规则待补全 |
