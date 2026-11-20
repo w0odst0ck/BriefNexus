@@ -36,7 +36,7 @@
 - 源头重分类：`research-collectors/sources.yaml` 26 源分 `scheduled`/`manual`/`archive`，支持 `daily`/`weekly`/`monthly` 节奏（commit `c11e106`）
 - `pull.py` 支持 `--mode`/`--source`/`--dry-run`；`cron_daily_snapshot.sh` 白名单空时 no-op 不告警
 - healthcheck 修假绿灯：白名单空期不误报，零产出源可见化（commit `446519b`）
-- 已确认缺口：X / Instagram 无现成通道（MediaCrawler 不支持，RSSHub 需 token）→ 方案见 `research-collectors/plan/X图集采集方案.md`
+- 已确认缺口：X / Instagram 无现成通道（MediaCrawler 不支持，RSSHub 需 token）；X 采集方案属 `research-collectors` 仓，不在本仓文档内
 
 ---
 
@@ -108,4 +108,4 @@ curl -X POST :9000/v1/collect -d '{"source":"x"}'
 | `架构/技术选型书.md` | V1 架构决策记录 |
 | `归档/` | 历史任务书 + 早期规划（已完成，留档查证） |
 
-> 文档约定：所有文档放 `doc/` 并入库；`plan/` 仅暂存未定稿草稿（gitignore）。新文档先问是否必要，避免膨胀。
+> 文档约定：**每仓文档自负**——本仓 `doc/` 只管 BriefNexus 平台；`research-collectors` 等业务仓的文档留在各自仓内，不交叉引用。`plan/` 仅暂存未定稿草稿（gitignore）。新文档先问是否必要，避免膨胀。
