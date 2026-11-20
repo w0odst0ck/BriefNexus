@@ -34,6 +34,8 @@ scripts/crawler_config.ini
 
 # Privacy
 memory/
+# plan/ 已废弃（2026-11-20）：全部文档迁 doc/ 并入库
+# 临时草稿仍可放 plan/（不进库）
 plan/
 *.ini
 *.db
