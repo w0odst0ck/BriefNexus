@@ -36,7 +36,7 @@
 - 源头重分类：`research-collectors/sources.yaml` 26 源分 `scheduled`/`manual`/`archive`，支持 `daily`/`weekly`/`monthly` 节奏（commit `c11e106`）
 - `pull.py` 支持 `--mode`/`--source`/`--dry-run`；`cron_daily_snapshot.sh` 白名单空时 no-op 不告警
 - healthcheck 修假绿灯：白名单空期不误报，零产出源可见化（commit `446519b`）
-- 已确认缺口：X / Instagram 无现成通道（MediaCrawler 不支持，RSSHub 需 token）→ 方案见 `research-collectors/plan/X图集采集方案.md`（文件在它自己仓，此处仅指路）
+- 已确认缺口：X / Instagram 无现成通道（MediaCrawler 不支持，RSSHub 需 token）；方案与 MVP 设计见 `research-collectors/plan/X图集采集-MVP设计.md`（文件在它自己仓，此处仅指路）
 
 ---
 
@@ -75,11 +75,30 @@
 
 | 维度 | 内置（`intel/collectors/`） | 外挂（业务项目 `collectors_extra_dirs`） |
 |---|---|---|
+| 许可证 | **宽松开源（MIT/Apache）且允许再分发** | 非商业/自定义许可、或无许可 |
 | 通用性 | 多项目复用 | 业务特定 |
 | 机密性 | 公开 | **涉业务机密必须外挂（铁律）** |
+| 体积 | 小 | 大（含第三方依赖） |
 | 维护 | 平台管 | 业务自维护 |
 
+> **许可证是第一道门**（比其他维度都优先）：平台仓 PUBLIC，任何非宽松许可的三方代码
+> 不得入库（即使是 vendor 目录）。否则一旦平台对外提供服务，即违反对方许可。
+> 判例：MediaCrawler 是 `NON-COMMERCIAL LEARNING LICENSE 1.1` → **保持独立仓，只挂载 adapter，不并入**。
+
 现有：内置 9 个（8 注册 + 1 死代码）、外挂 4 个（在 `research-collectors`）。
+
+**外部引擎清单（均为独立仓，只挂载不并入）**
+
+| 引擎 | 许可 | 接入方式 | 位置 |
+|---|---|---|---|
+| MediaCrawler | NON-COMMERCIAL | adapter 调 :8100 API（待建） | `projects/MediaCrawler` |
+| RSSHub | AGPL-3.0（服务态调用，不链接） | 本地实例 :1200 | `opt/rsshub` |
+| gallery-dl | GPL-2.0（CLI 子进程调用） | 子进程 | venv 内 |
+| MinerU | AGPL-3.0 | 子进程隔离 | `venvs/mineru` |
+| PageHarvest | — | 离线工具，不接入 | `projects/PageHarvest` |
+
+> 许可注意事项：AGPL 引擎（RSSHub/MinerU）以**独立服务/子进程**调用不衍生作品；
+> 若将来平台对外提供 API 让用户直接调用 AGPL 引擎能力，需重新评估（AGPL 的网络服务条款）。
 
 ---
 
