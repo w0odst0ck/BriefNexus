@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 
 import requests
@@ -23,9 +24,12 @@ import requests
 logger = logging.getLogger("intel.render")
 
 # 默认渲染子进程解释器: playwright 独立 venv(可用 BN_RENDER_PYTHON 覆盖)
-DEFAULT_RENDER_PYTHON = os.environ.get(
-    "BN_RENDER_PYTHON", "/home/l/venvs/playwright/.venv/bin/python"
-)
+# 未设置时用当前解释器 —— 若本环境装了 playwright 即可直接工作
+def _default_render_python() -> str:
+    return os.environ.get("BN_RENDER_PYTHON") or sys.executable
+
+
+DEFAULT_RENDER_PYTHON = _default_render_python()
 # worker 与 render.py 同目录
 DEFAULT_WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "render_worker.py")
 
