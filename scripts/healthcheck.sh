@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # BriefNexus 采集平台 healthcheck — 每小时跑，失败飞书告警
-# 用法: bash 脚本/briefnexus_healthcheck.sh
+# 用法: bash scripts/healthcheck.sh
 #
 # 2026-10-14 加固：原版只探平台自身 /healthz，不探依赖与产出 →
 # RSSHub(:1200) 挂掉 25 天、快照全 0 条，巡检照样每小时报 ok。

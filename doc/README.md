@@ -111,7 +111,7 @@ curl -X POST :9000/v1/collect -d '{"source":"x"}'
 
 - 服务：`systemctl --user status briefnexus-api`（:9000）
 - 测试：`cd /tmp && pytest <repo>/platform/tests <repo>/intel/tests`（**必须 cd /tmp**，否则 `platform` 包遮蔽标准库）
-- 巡检：`脚本/briefnexus_healthcheck.sh`（每小时 cron）
+- 巡检：`scripts/healthcheck.sh`（每小时 cron）
 
 ---
 
