@@ -1,0 +1,23 @@
+services:
+  briefnexus:
+    build: .
+    image: briefnexus:latest
+    container_name: briefnexus
+    ports:
+      - "9000:9000"
+    environment:
+      # 容器内必须绑 0.0.0.0，否则宿主机访问不到
+      BN_HOST: "0.0.0.0"
+      BN_PORT: "9000"
+    # 配置热挂载：改宿主机 config.d 不用重建镜像
+    volumes:
+      - ./platform/platform_config.yaml:/app/platform/platform_config.yaml:ro
+      - ./platform/config.d:/app/platform/config.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9000/healthz', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

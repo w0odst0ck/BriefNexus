@@ -34,4 +34,7 @@ import uvicorn
 
 if __name__ == "__main__":
     server = config.get_server_config()
-    uvicorn.run(app, host=server["host"], port=server["port"])
+    # 环境变量优先（容器部署必需：容器内必须绑 0.0.0.0 才能被外部访问）
+    host = os.environ.get("BN_HOST") or server["host"]
+    port = int(os.environ.get("BN_PORT") or server["port"])
+    uvicorn.run(app, host=host, port=port)

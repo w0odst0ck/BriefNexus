@@ -1,0 +1,37 @@
+# 构建上下文排除（镜像不需要的东西）
+.git/
+.gitignore
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 数据与产物
+intel/output/
+intel/data/
+data/
+executor/
+scripts/__pycache__/
+
+# 文档与记忆（镜像里不需要）
+doc/
+memory/
+plan/
+learning/
+archive/
+
+# 本地配置（含本机路径，不入镜像）
+platform/config.d/00_*.yaml
+platform/config.d/10_*.yaml
+*.ini
+*.db
+
+# 测试
+**/tests/
+pytest.ini
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+*~

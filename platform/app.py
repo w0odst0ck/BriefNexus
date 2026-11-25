@@ -44,6 +44,7 @@ logger = logging.getLogger("platform.api")
 
 SYNC_TIMEOUT_S = 30  # /collect/sync 最大阻塞时长
 ITEM_PAGE_MAX = 500  # items 分页 limit 上限
+URL_FETCH_TIMEOUT_S = 90  # /v1/url 上限（渲染降级可能跑 60s+）
 
 
 class CollectorSpec(BaseModel):
@@ -291,6 +292,100 @@ def create_app(cfg: dict | None = None, scheduler_opts: dict | None = None) -> F
                 store.free_items(task_id)  # 交付即清: 响应体返回后立即释放 items
                 return {"task_id": task_id, "status": task["status"],
                         "items": items, "items_count": task["items_count"]}
+            time.sleep(0.2)
+
+    @router.post("/v1/url")
+    def fetch_url(payload: dict):
+        """傻瓜式：给一个网址，直接返回抽取结果。
+
+        不需要知道 collector/module/task_id；内部提交任务 + 等待 + 拉结果 + 释放。
+
+        Body: {"url": "https://...", "force_render": false, "max_chars": 50000}
+        返回: {url, title, method, extractor, elapsed_s, text, links, images, status}
+        """
+        url = (payload.get("url") or "").strip()
+        if not url:
+            raise HTTPException(status_code=422, detail="缺必填字段 url")
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=422, detail="url 必须以 http:// 或 https:// 开头")
+
+        params = {
+            "url": url,
+            "force_render": bool(payload.get("force_render", False)),
+            "include_links": bool(payload.get("include_links", True)),
+            "include_images": bool(payload.get("include_images", True)),
+        }
+        if payload.get("max_chars"):
+            params["max_chars"] = int(payload["max_chars"])
+
+        req = CollectRequest(
+            collector=CollectorSpec(
+                module="intel.collectors.generic_url:GenericUrlCollector"),
+            params=params,
+        )
+        task_id = _submit_task(req)
+
+        # 渲染降级可能跑到 60s，给比 sync 接口更宽的上限
+        deadline = time.time() + URL_FETCH_TIMEOUT_S
+        while True:
+            task = store.get_task(task_id)
+            if task["status"] == store.STATUS_DONE:
+                rows = store.get_items(task_id, 0, 1)
+                store.free_items(task_id)
+                if not rows:
+                    return {"url": url, "status": "empty", "error": "未抽到内容"}
+                item = item_to_api(rows[0])
+                raw = item.get("raw_data") or {}
+                if isinstance(raw, str):
+                    try:
+                        raw = json.loads(raw)
+                    except ValueError:
+                        raw = {}
+                return {
+                    "url": url,
+                    "status": "ok",
+                    "title": item.get("title", ""),
+                    "method": raw.get("method"),
+                    "extractor": raw.get("extractor"),
+                    "elapsed_s": raw.get("elapsed_s"),
+                    "quality": raw.get("quality", "good"),
+                    "text": raw.get("text", ""),
+                    "text_chars": raw.get("text_chars", 0),
+                    "links": raw.get("links", []),
+                    "images": raw.get("images", []),
+                }
+            if task["status"] in store.TERMINAL_STATUSES or time.time() >= deadline:
+                store.free_items(task_id)
+                return {"url": url, "status": task["status"],
+                        "error": task.get("error") or "抓取失败或超时"}
+            time.sleep(0.3)
+
+    @router.get("/v1/quick")
+    def quick_fetch(source: str, params: str | None = None):
+        """傻瓜式：按预置源名直接拿数据（跳过 task_id 轮询）。
+
+        例: GET /v1/quick?source=cninfo
+            GET /v1/quick?source=cninfo&params={\"max_age\":3}
+        仅适用于短任务（<30s）；长任务请用 /v1/collect。
+        """
+        p = {}
+        if params:
+            try:
+                p = json.loads(params)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="params 必须是合法 JSON") from None
+        req = CollectRequest(source=source, params=p or None)
+        task_id = _submit_task(req)
+        deadline = time.time() + SYNC_TIMEOUT_S
+        while True:
+            task = store.get_task(task_id)
+            if task["status"] in store.TERMINAL_STATUSES or time.time() >= deadline:
+                rows = store.get_items(task_id, 0, ITEM_PAGE_MAX)
+                store.free_items(task_id)
+                return {"source": source, "status": task["status"],
+                        "items": [item_to_api(r) for r in rows],
+                        "items_count": task["items_count"],
+                        "error": task.get("error")}
             time.sleep(0.2)
 
     @router.get("/tasks/{task_id}")

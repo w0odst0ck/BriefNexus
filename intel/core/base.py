@@ -22,6 +22,10 @@ class NewsItem:
     source: str = ""
     domain: str = ""
     sector: str = ""
+    # 平台侧支持这两个字段逻辑（scheduler.py 归一化时透传）；这里声明默认值，
+    # 不设默认值的旧采集器行为不变（type 默认 news / raw_data 默认空）
+    type: str = "news"
+    raw_data: dict | None = None
 
     @property
     def date(self) -> str:

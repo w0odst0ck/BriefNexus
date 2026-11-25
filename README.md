@@ -86,11 +86,92 @@
 
 ## 🚀 快速开始
 
-### 1. 启动服务
+### 方式一：Docker（推荐）
 
 ```bash
-cd <项目目录>          # 替换为你的 BriefNexus 路径（下同）
-.venv/bin/python platform/run.py        # 或 systemd 服务（已配置开机自启）
+git clone https://github.com/w0odst0ck/BriefNexus.git
+cd BriefNexus
+docker compose up -d
+
+# 验证
+curl localhost:9000/healthz
+```
+
+### 方式二：本地 Python
+
+```bash
+pip install -r platform/requirements.txt -r intel/requirements.txt
+pip install "trafilatura>=2.0"      # 正文抽取（可选但推荐）
+python platform/run.py              # 监听 127.0.0.1:9000
+```
+
+---
+
+## 🎯 三个傻瓜式用法
+
+### 1. 给个网址就采集
+
+```bash
+curl -X POST localhost:9000/v1/url \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://sspai.com/post/103012"}'
+```
+
+返回标题、正文、链接、图片。自动三级降级：静态抓取 → CDP 渲染 → 明确失败。
+
+```json
+{
+  "status": "ok",
+  "title": "少数派 - 高效工作，品质生活",
+  "method": "static",
+  "quality": "good",
+  "text": "正文内容...",
+  "text_chars": 1759,
+  "links": [{"text": "...", "href": "..."}],
+  "images": [{"src": "...", "alt": "..."}]
+}
+```
+
+> `quality: thin` 表示只抓到页面壳（JS 网站且环境无浏览器）
+
+### 2. 预置源一行取数据
+
+```bash
+curl localhost:9000/v1/sources           # 看有哪些源
+curl "localhost:9000/v1/quick?source=cninfo"
+```
+
+内置源（开箱可用）：`url`、`cninfo`（巨潮资讯）、`eastmoney`（东方财富）
+
+### 3. 异步任务（长时间采集）
+
+```bash
+curl -X POST localhost:9000/v1/collect \
+  -d '{"source":"eastmoney"}'
+# → {"task_id":"t_..."}
+
+curl localhost:9000/v1/tasks/t_...           # 查状态
+curl localhost:9000/v1/tasks/t_.../items     # 拉结果
+```
+
+---
+
+## ⚠️ 已知限制
+
+| 限制 | 说明 |
+|---|---|
+| **JS 站点** | 容器镜像**不含浏览器**。需要渲染的站请本地部署（装了 playwright）或传 `force_render` 后自行补依赖 |
+| **境外源** | `white_house`/`sec_edgar`/`eu_commission` 默认关闭（需代理才能访问） |
+| **单进程** | 内存态存储只在单进程内可见，不要 `uvicorn --workers>1` |
+| **零持久化** | 结果存内存，TTL 1h，重启即清（有意设计，不落盘） |
+
+---
+
+### 附：本地开发启动
+
+```bash
+cd <项目目录>
+.venv/bin/python platform/run.py
 # 服务监听 http://127.0.0.1:9000
 ```
 

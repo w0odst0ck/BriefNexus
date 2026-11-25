@@ -7,3 +7,9 @@ requests>=2.34.2
 beautifulsoup4>=4.15.0
 PyYAML>=6.0.3
 feedparser>=6.0.14
+
+# 通用 URL 采集（v1/url）正文抽取 —— 2026-11-25 新增
+# trafilatura: 学术级正文抽取（主）；readabilipy: Mozilla readability 移植（备）
+# 不在 platform/requirements.txt 是因为它们只在 generic_url 采集器里用到
+trafilatura>=2.0
+readabilipy>=0.3

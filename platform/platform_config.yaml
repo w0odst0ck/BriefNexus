@@ -26,7 +26,49 @@ collectors_extra_dirs:
 #   - POST /v1/collect {"collector": {"module": "a.b:C"}} → 模块引用
 #   - POST /v1/collect {"collector": {"code": "..."}}  → 代码内联(需开启开关)
 # 需要源仍走平台时,用 config.d 片段声明(module 指向任何已安装模块)。
-sources: {}
+#
+# 2026-11-25 恢复：内置源重新启用，让用户能用短名调用（傻瓜式）。
+# 保留标准：直连可访问 + 稳定产出。境外源（white_house/sec_edgar/eu_commission）
+# 实测直连不通，移出内置（仍可模块引用），见 doc/方案/采集能力.md。
+sources:
+  # ── 通用网址采集（核心能力：输入任意 URL）──
+  url:
+    module: intel.collectors.generic_url:GenericUrlCollector
+    enabled: true
+
+  # ── 国内财经（实测直连稳定）──
+  cninfo:
+    module: intel.collectors.cninfo:CninfoCollector
+    enabled: true
+    params: {max_age: 7}
+  eastmoney:
+    module: intel.collectors.eastmoney:EastMoneyCollector
+    enabled: true
+    params: {max_age: 7}
+  sec_edgar:
+    module: intel.collectors.sec_edgar:SECEdgarCollector
+    enabled: false        # 境外源，国内直连需代理；默认关，可手动开
+    params: {max_age: 14}
+  white_house:
+    module: intel.collectors.white_house:WhiteHouseCollector
+    enabled: false        # 同上
+    params: {max_age: 7}
+  eu_commission:
+    module: intel.collectors.eu_commission:EUCommissionCollector
+    enabled: false        # 同上
+    params: {max_age: 7}
+  arxiv_perception:
+    module: intel.collectors.arxiv_perception:ArxivPerceptionCollector
+    enabled: false        # 实测 24s / 3 条，太慢，默认关
+    params: {max_age: 14}
+  adas_vehicle_intl:
+    module: intel.collectors.adas_vehicle_intl:AdasVehicleCollector
+    enabled: false        # 季刊 1 条，默认关
+    params: {max_age: 30}
+  nvidia_blog:
+    module: intel.collectors.nvidia_blog:NvidiaBlogCollector
+    enabled: false        # 假绿灯（ConnectionReset 返回空仍报 ok）
+    params: {max_age: 7}
 
 storage:
   ttl_seconds: 3600            # 任务+结果内存保留时长(过期清理; 进程重启即全清)
