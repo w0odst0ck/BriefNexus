@@ -3,12 +3,14 @@
 Turn any URL into structured data. Self-hosted HTTP collection service.
 
 ```bash
-docker compose up -d
+docker run -d -p 9000:9000 -e BN_HOST=0.0.0.0 --name briefnexus \
+  ghcr.io/w0odst0ck/briefnexus:latest
+
 curl -X POST localhost:9000/v1/url -H 'Content-Type: application/json' \
   -d '{"url": "https://example.com/article"}'
 ```
 
-That's it. No config, no API key, no setup.
+No clone, no build, no config, no API key.
 
 ---
 
@@ -50,7 +52,14 @@ Need more? See [Adding a source](#adding-a-source).
 
 ## Install
 
-### Docker (recommended)
+### Prebuilt image (fastest)
+
+```bash
+docker run -d -p 9000:9000 -e BN_HOST=0.0.0.0 --name briefnexus \
+  ghcr.io/w0odst0ck/briefnexus:latest
+```
+
+### From source
 
 ```bash
 git clone https://github.com/w0odst0ck/BriefNexus.git
